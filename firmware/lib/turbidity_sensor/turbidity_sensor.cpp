@@ -32,11 +32,11 @@ float calculateNTU(float sensorVoltage) {
 
 // --- FUNCTION: Classify turbidity into qualitative bands ---
 String classifyTurbidity(float ntu) {
-  if (ntu <= 70) return "Excellent ";
-  if (ntu <= 150) return "Good";
-  if (ntu <= 300) return "Moderate ";
-  if (ntu <= 500) return "Poor";
-  return "Very Poor";
+  if (ntu <= 70) return "Excellent ✅ (Visually Clear)";
+  if (ntu <= 150) return "Good 👍 (Slightly Hazy)";
+  if (ntu <= 300) return "Moderate ⚠️ (Watch Closely)";
+  if (ntu <= 500) return "Poor 🚫 (Stress Likely)";
+  return "Very Poor ❌ (Flush Recommended)";
 }
 
 // --- FUNCTION: Setup Turbidity Sensor ---
@@ -54,7 +54,7 @@ void turbidity_sensor_init() {
 // --- FUNCTION: Read and print one turbidity sample ---
 void turbidity_sensor_read() {
   float dividedVoltage = readAverageVoltage();
-  float sensorVoltage = dividedVoltage * 1.5f;
+  float sensorVoltage = dividedVoltage * 1.5f;//update: Corrected to use the actual sensor voltage calculatio
   float turbidity = calculateNTU(sensorVoltage);  // now you're passing real voltage
     // Still pass the divided voltage
   String quality = classifyTurbidity(turbidity);
@@ -67,6 +67,4 @@ void turbidity_sensor_read() {
   Serial.print(turbidity, 1);
   Serial.print(" NTU | Quality: ");
   Serial.println(quality);
-
-  delay(5000);
 }

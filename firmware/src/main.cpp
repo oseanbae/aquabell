@@ -23,5 +23,5 @@ void loop() {
   dht_sensor_read();
   temp_sensor_read();
   turbidity_sensor_read();
-  delay(10000); // Delay between readings, adjust as needed
+  delay(5000); // Delay between readings, adjust as needed
 }
