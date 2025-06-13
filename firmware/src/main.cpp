@@ -11,7 +11,6 @@ void setup() {
 
 void loop() {
     dht_sensor_read(); // Read and print temperature and humidity
-    delay(2000); // Wait for 2 seconds before the next reading
     temp_sensor_read(); // Read and print temperature from DS18B20 sensor
-    delay(2000); // Wait for 2 seconds before the next reading
+    delay(3000); // Wait for 2 seconds before the next reading
 }
