@@ -9,7 +9,7 @@
 #define ONE_WIRE_BUS 23 // GPIO pin for OneWire bus (if using OneWire sensors)
 
 //TURBIDITY Sensor Configuration
-#define TURBIDITY_PIN 34 // GPIO pin connected to the turbidity sensor
+#define TURBIDITY_PIN 36 // GPIO pin connected to the turbidity sensor
 #define ADC_MAX 4095.0 // Maximum ADC value for ESP32 (12-bit resolution)
 #define VOLTAGE_REF 3.3 // Reference voltage for ADC (ESP32 typically uses 3.3V)
 #define NUM_SAMPLES 10 // Number of samples to average for turbidity sensor
