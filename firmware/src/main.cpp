@@ -2,15 +2,26 @@
 #include "config.h"
 #include "dht_sensor.h"
 #include "temp_sensor.h"
+#include "turbidity_sensor.h"
+
+
 void setup() {
-    Serial.begin(115200); // Initialize serial communication at 115200 baud rate
-    dht_sensor_init(); // Initialize the DHT sensor
-    temp_sensor_init(); // Initialize the temperature sensor (DS18B20)
-    Serial.println("DHT and DS18B20 sensors initialized.");
-}   
+  Serial.begin(115200);
+  delay(2000); // Optional warm-up for sensors
+
+  // Initialize sensors
+  dht_sensor_init();
+  temp_sensor_init();
+  turbidity_sensor_init();
+
+  Serial.println("ESP32 Water Quality Monitor Initialized.");
+  Serial.println("Monitoring water quality based on custom aquaculture standards.");
+  Serial.println("-----------------------------------------------------");
+}
 
 void loop() {
-    dht_sensor_read(); // Read and print temperature and humidity
-    temp_sensor_read(); // Read and print temperature from DS18B20 sensor
-    delay(3000); // Wait for 2 seconds before the next reading
+  dht_sensor_read();
+  temp_sensor_read();
+  turbidity_sensor_read();
+  delay(10000); // Delay between readings, adjust as needed
 }
