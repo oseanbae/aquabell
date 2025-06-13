@@ -1,0 +1,4 @@
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/
+firmware/build/
