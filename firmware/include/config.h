@@ -7,5 +7,5 @@
 #define ONE_WIRE_BUS 23 // GPIO pin for OneWire bus (if using OneWire sensors)
 
 //Float switch configuration
-#define FLOAT_SWITCH_PIN 25 // GPIO pin connected to the float switch
+#define FLOAT_SWITCH_PIN 21 // GPIO pin connected to the float switch
 #endif
