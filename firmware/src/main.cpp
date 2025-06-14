@@ -11,7 +11,7 @@ void setup() {
     Serial.begin(115200); // Initialize serial communication at 115200 baud rate
     dht_sensor_init(); // Initialize the DHT sensor
     temp_sensor_init(); // Initialize the temperature sensor (DS18B20)
-    float_switch_init(); // Initialize the float switch (if used
+    float_switch_init(); // Initialize the float switch (if used)
    
 }   
 
