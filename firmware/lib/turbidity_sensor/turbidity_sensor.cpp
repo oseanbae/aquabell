@@ -41,7 +41,6 @@ String classifyTurbidity(float ntu) {
 
 // --- FUNCTION: Setup Turbidity Sensor ---
 void turbidity_sensor_init() {
-  Serial.begin(115200);
   delay(2000); // Optional warm-up for sensor stability
   pinMode(TURBIDITY_PIN, INPUT);
   analogSetAttenuation(ADC_11db);  // Set input range to 0–3.3V
