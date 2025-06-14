@@ -19,5 +19,6 @@
 // Optional: Threshold to detect voltage near ESP32 ADC max input
 #define MAX_ADC_SAFE_VOLTAGE 3.1 // Warn if voltage exceeds this (optional)
 
-
+//Float Switch Configuration
+#define FLOAT_SWITCH_PIN 25 // GPIO pin connected to the float switch
 #endif
