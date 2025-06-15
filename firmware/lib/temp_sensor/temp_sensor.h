@@ -1,7 +1,3 @@
-#ifndef TEMP_SENSOR_H
-#define TEMP_SENSOR_H
-
+#pragma once
 void temp_sensor_init();
-void temp_sensor_read();
-
-#endif // TEMP_SENSOR_H
+float ds18b20_read();

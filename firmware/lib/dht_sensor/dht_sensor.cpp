@@ -1,32 +1,31 @@
-#include <Arduino.h>
-#include "config.h"
 #include "dht_sensor.h"
 #include "DHT.h"
+#include "config.h"
 
-// Initialize the DHT sensor
- DHT dht(DHT_PIN, DHT_TYPE);
+DHT dht(DHT_PIN, DHT_TYPE);
 
 void dht_sensor_init() {
     dht.begin();
 }
 
-void dht_sensor_read() {
-    // Read temperature and humidity
-    float temperature = dht.readTemperature();
-    float humidity = dht.readHumidity();
-
-    // Check if the readings are valid
-    if (isnan(temperature) || isnan(humidity)) {
-        Serial.println("Failed to read from DHT sensor!");
-        return;
+float dht_read_temperature() {
+    float t = dht.readTemperature();
+    if (isnan(t)) {
+#ifdef ENABLE_LOGGING
+        Serial.println("Failed to read DHT temperature");
+#endif
+        return NAN;
     }
+    return t;
+}
 
-    // Print the results
-    Serial.print("Temperature: ");
-    Serial.print(temperature);
-    Serial.print(" °C");
-    
-    Serial.print(" | Humidity: ");
-    Serial.print(humidity);
-    Serial.println(" %");
+float dht_read_humidity() {
+    float h = dht.readHumidity();
+    if (isnan(h)) {
+#ifdef ENABLE_LOGGING
+        Serial.println("Failed to read DHT humidity");  
+#endif
+        return NAN;
+    }
+    return h;
 }

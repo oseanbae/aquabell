@@ -1,11 +1,7 @@
-#ifndef TURBIDITY_SENSOR_H
-#define TURBIDITY_SENSOR_H
-#include <Arduino.h>
+#pragma once
 
-float readAverageVoltage();
-float calculateNTU(float voltage);
-String classifyTurbidity(float ntu);
 void turbidity_sensor_init();
-void turbidity_sensor_read();
-
-#endif // TURBIDITY_SENSOR_H
+float readAverageVoltage();
+float voltageToNTU(float v);
+float calculateNTU();
+String classifyTurbidity(float ntu);

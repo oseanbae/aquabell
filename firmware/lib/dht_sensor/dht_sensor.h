@@ -1,7 +1,4 @@
-#ifndef DHT_SENSOR_H
-#define DHT_SENSOR_H
-
+#pragma once
 void dht_sensor_init();
-void dht_sensor_read();
-
-#endif // DHT_SENSOR_H
+float dht_read_temperature();
+float dht_read_humidity();
