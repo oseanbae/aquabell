@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "do_sensor.h"
 #include "config.h"
-
+#include "temp_sensor.h"
 static float V100 = 2.00;  // Set this after calibration (volts)
 static const float DO_MAX = 20.0; // mg/L
 
