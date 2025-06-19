@@ -9,13 +9,14 @@
 const unsigned long SENSOR_INTERVAL = 3000; // 3 seconds
 
 struct SensorData {
-    float airTemp;
-    float airHumidity;
-    float waterTemp;
-    float turbidityNTU;
-    float pH;
-    bool floatTriggered;
-    String turbidityClass;
+    float airTemp = NAN; 
+    float airHumidity = NAN; 
+    float waterTemp = NAN;
+    float turbidityNTU = NAN;
+    float pH = NAN;
+    bool floatTriggered = false;
+    const char* turbidityClass = "Unknown";
+
 };
 
 SensorData current;

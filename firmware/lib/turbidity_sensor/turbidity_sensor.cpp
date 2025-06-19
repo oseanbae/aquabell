@@ -23,14 +23,14 @@ float voltageToNTU(float v) {
 }
 
 float calculateNTU() {
-    float v = readAverageVoltage() * 1.5f;
+    float v = readAverageVoltage() * SENSOR_VOLTAGE_GAIN;
     return voltageToNTU(v);
 }
 
-String classifyTurbidity(float ntu) {
-    if (ntu <= 70) return "Excellent ✅";
-    if (ntu <= 150) return "Good 👍";
-    if (ntu <= 300) return "Moderate ⚠️";
-    if (ntu <= 500) return "Poor 🚫";
-    return "Very Poor ❌";
+const char* classifyTurbidity(float ntu) {
+    if (ntu <= 70) return "Clear";
+    if (ntu <= 150) return "Acceptable";
+    if (ntu <= 300) return "Marginal";
+    if (ntu <= 500) return "Poor";
+    return "Unacceptable";
 }
