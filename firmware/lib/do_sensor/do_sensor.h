@@ -1,6 +1,5 @@
-#ifndef DO_SENSOR_H
-#define DO_SENSOR_H
+#pragma once
 
-#include <Arduino.h>
-
-#endif
+float readDOVoltage();
+float getDOSaturationUgL(float tempC);
+float calculateDOMgL(float measured_mV, float tempC);

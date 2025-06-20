@@ -8,6 +8,7 @@ struct SensorData {
     float waterTemp = NAN;
     float turbidityNTU = NAN;
     float pH = NAN;
+    float dissolvedOxygen = NAN;
     bool floatTriggered = false;
     const char* turbidityClass = "Unknown";
 };

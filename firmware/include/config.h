@@ -30,8 +30,9 @@
 
 // === DO Sensor ===
 #define DO_SENSOR_PIN 34 // Pin for the DO sensor
-#define DO_CALIBRATION_OFFSET 0.0 // Calibration offset for DO sensor
-
+#define DO_CAL_TEMP       24.0     // Temperature during calibration (°C)
+#define DO_CAL_VOLTAGE    1590.0   // DO sensor voltage in mV at that temp
+#define DO_SENSOR_SAMPLES 32 // Number of samples to average for DO sensor
 // === DS3231 RTC Module ===
 #define RTC_SDA 21 // I2C pins for ESP32
 #define RTC_SCL 22 // I2C pins for ESP32
@@ -45,8 +46,8 @@
 
 // === Rules Engine ===
 #define TEMP_THRESHOLD 32.0f // Temperature threshold for fan control
-#define HUMIDITY_THRESHOLD 90.0f // Humidity threshold for light control
-
+#define HUMIDITY_THRESHOLD 80.0f // Humidity threshold for light control
+#define DISSOLVED_OXYGEN_THRESHOLD 5.0f // DO threshold for valve control
 // === Timing Configuration ===
 #define PUMP_ON_DURATION 15      // Pump ON duration in minutes
 #define PUMP_OFF_DURATION 45     // Pump OFF duration in minutes

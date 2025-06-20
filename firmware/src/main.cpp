@@ -5,19 +5,10 @@
 #include "float_switch.h"
 #include "turbidity_sensor.h"
 #include "ph_sensor.h"
+#include "do_sensor.h"
+#include "sensor_data.h"
 
 const unsigned long SENSOR_INTERVAL = 3000; // 3 seconds
-
-struct SensorData {
-    float airTemp = NAN; 
-    float airHumidity = NAN; 
-    float waterTemp = NAN;
-    float turbidityNTU = NAN;
-    float pH = NAN;
-    bool floatTriggered = false;
-    const char* turbidityClass = "Unknown";
-
-};
 
 SensorData current;
 unsigned long lastSensorRead = 0;
@@ -29,7 +20,10 @@ void readSensors() {
     current.turbidityNTU = calculateNTU();
     current.turbidityClass = classifyTurbidity(current.turbidityNTU);
     current.pH = ph_calibrate();
-    current.floatTriggered = float_switch_triggered();
+    
+    float doVoltage = readDOVoltage(); // Read DO sensor voltage
+    current.dissolvedOxygen =  calculateDOMgL(readDOVoltage(), current.waterTemp); // Assuming DO sensor is connected to PH pin for simplicity
+    current.floatTriggered = float_switch_triggered();  
 
 #ifdef ENABLE_LOGGING
     Serial.println("----- Sensor Readings -----");
@@ -38,6 +32,8 @@ void readSensors() {
     Serial.print("Water Temp: "); Serial.println(current.waterTemp);
     Serial.print("Turbidity (NTU): "); Serial.println(current.turbidityNTU);
     Serial.print("Turbidity Quality: "); Serial.println(current.turbidityClass);
+    Serial.print("Dissolved Oxygen (mg/L): "); Serial.println(current.dissolvedOxygen);
+    
     Serial.print("pH: "); Serial.println(current.pH);
     if (current.floatTriggered) Serial.println("⚠️ Float switch just triggered!");
     Serial.println("---------------------------");
