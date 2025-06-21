@@ -30,8 +30,8 @@
 
 // === DO Sensor ===
 #define DO_SENSOR_PIN 34 // Pin for the DO sensor
-#define DO_CAL_TEMP       24.0     // Temperature during calibration (°C)
-#define DO_CAL_VOLTAGE    1590.0   // DO sensor voltage in mV at that temp
+#define DO_CAL_TEMP       30.75    // Temperature during calibration (°C)
+#define DO_CAL_VOLTAGE    1650.00   // DO sensor voltage in mV at that temp
 #define DO_SENSOR_SAMPLES 32 // Number of samples to average for DO sensor
 // === DS3231 RTC Module ===
 #define RTC_SDA 21 // I2C pins for ESP32
@@ -48,11 +48,11 @@
 #define TEMP_THRESHOLD 32.0f // Temperature threshold for fan control
 #define HUMIDITY_THRESHOLD 80.0f // Humidity threshold for light control
 #define DISSOLVED_OXYGEN_THRESHOLD 5.0f // DO threshold for valve control
+
 // === Timing Configuration ===
 #define PUMP_ON_DURATION 15      // Pump ON duration in minutes
 #define PUMP_OFF_DURATION 45     // Pump OFF duration in minutes
 #define PUMP_CYCLE_DURATION (PUMP_ON_DURATION + PUMP_OFF_DURATION) // Total cycle duration in minutes
-
 #define LIGHT_MORNING_ON 360    // 6 * 60 = 6:00 AM
 #define LIGHT_MORNING_OFF 600   // 10 * 60 = 10:00 AM
 #define LIGHT_EVENING_ON 930    // 15 * 60 + 30 = 15:30 (3:30 PM)

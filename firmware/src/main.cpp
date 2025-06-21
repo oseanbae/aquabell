@@ -22,7 +22,7 @@ void readSensors() {
     current.pH = ph_calibrate();
     
     float doVoltage = readDOVoltage(); // Read DO sensor voltage
-    current.dissolvedOxygen =  calculateDOMgL(readDOVoltage(), current.waterTemp); // Assuming DO sensor is connected to PH pin for simplicity
+    current.dissolvedOxygen =  calculateDOMgL(doVoltage, current.waterTemp); // Assuming DO sensor is connected to PH pin for simplicity
     current.floatTriggered = float_switch_triggered();  
 
 #ifdef ENABLE_LOGGING

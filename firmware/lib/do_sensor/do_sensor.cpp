@@ -9,30 +9,33 @@ static const uint16_t DO_Table[41] = {
     9080, 8900, 8730, 8570, 8410, 8250, 8110, 7960, 7820, 7690,
     7560, 7430, 7300, 7180, 7070, 6950, 6840, 6730, 6630, 6530, 6410
 };
-
+void do_sensor_init() {
+  pinMode(DO_SENSOR_PIN, INPUT);
+  analogReadResolution(12); // ESP32 ADC resolution
+  analogSetAttenuation(ADC_11db); // Set ADC attenuation to allow full range (0-3.3V)
+  Serial.println("DO Sensor initialized.");
+}
 // Reads the DO sensor voltage in mV
 float readDOVoltage() {
-    uint32_t sum = 0;
-    for (int i = 0; i < NUM_SAMPLES; ++i) {
-        sum += analogRead(DO_SENSOR_PIN);
-        delay(5);
-    }
-    float avg = sum / float(NUM_SAMPLES);
-    return avg * (3300.0 / 4095.0);  // 3.3V ref on ESP32, 12-bit ADC
+  uint32_t sum = 0;
+  for (int i = 0; i < NUM_SAMPLES; i++) {
+    sum += analogRead(DO_SENSOR_PIN);
+    delay(5);
+  }
+  float raw = sum / float(NUM_SAMPLES);
+  return (raw * 3300.0) / 4095.0;  // Convert ADC to mV
 }
 
-// Gets the expected DO saturation (µg/L) for a given temperature
 float getDOSaturationUgL(float tempC) {
-    if (tempC <= 0) return DO_Table[0];
-    if (tempC >= 40) return DO_Table[40];
-    int t = (int)tempC;
-    float f = tempC - t;
-    return DO_Table[t] + (DO_Table[t + 1] - DO_Table[t]) * f;
+  if (tempC <= 0) return DO_Table[0];
+  if (tempC >= 40) return DO_Table[40];
+  int t = int(tempC);
+  float frac = tempC - t;
+  return DO_Table[t] + (DO_Table[t + 1] - DO_Table[t]) * frac;
 }
 
-// Calculates DO in mg/L based on measured voltage and current temperature
-float calculateDOMgL(float measured_mV, float tempC) {
-    float satAtCurrent = getDOSaturationUgL(tempC);       // µg/L now
-    float satAtCal     = getDOSaturationUgL(DO_CAL_TEMP); // µg/L during calibration
-    return (measured_mV / DO_CAL_VOLTAGE) * (satAtCurrent / 1000.0); // mg/L
+float calculateDOMgL(float mV, float tempC) {
+  float sat_now = getDOSaturationUgL(tempC) / 1000.0;
+  float sat_cal = getDOSaturationUgL(DO_CAL_TEMP) / 1000.0;
+  return (mV / DO_CAL_VOLTAGE) * (sat_now / sat_cal);
 }
