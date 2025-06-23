@@ -1,29 +1,15 @@
 #include <Arduino.h>
 #include "config.h"
-#include "dht_sensor.h"
 #include "temp_sensor.h"
-#include "float_switch.h"
-#include "turbidity_sensor.h"
 #include "ph_sensor.h"
 #include "do_sensor.h"
+#include "turbidity_sensor.h"
+#include "dht_sensor.h"
+#include "float_switch.h"
 #include "sensor_data.h"
+#include "rule_engine.h"
 
-const unsigned long SENSOR_INTERVAL = 3000; // 3 seconds
-
-SensorData current;
 unsigned long lastSensorRead = 0;
-
-void readSensors() {
-    current.airTemp = dht_read_temperature();
-    current.airHumidity = dht_read_humidity();
-    current.waterTemp = ds18b20_read();
-    current.turbidityNTU = calculateNTU();
-    current.turbidityClass = classifyTurbidity(current.turbidityNTU);
-    current.pH = ph_calibrate();
-    
-    float doVoltage = readDOVoltage(); // Read DO sensor voltage
-    current.dissolvedOxygen =  calculateDOMgL(doVoltage, current.waterTemp); // Assuming DO sensor is connected to PH pin for simplicity
-    current.floatTriggered = float_switch_triggered();  
 
 #ifdef ENABLE_LOGGING
     Serial.println("----- Sensor Readings -----");
@@ -38,24 +24,20 @@ void readSensors() {
     if (current.floatTriggered) Serial.println("⚠️ Float switch just triggered!");
     Serial.println("---------------------------");
 #endif
-}
 
 void setup() {
     Serial.begin(115200);
     delay(2000); // Let Serial and sensors stabilize
-
-    dht_sensor_init();
+    
     temp_sensor_init();
-    float_switch_init();
-    turbidity_sensor_init();
     ph_sensor_init();
-
+    do_sensor_init();
+    turbidity_sensor_init();
+    dht_sensor_init();
+    float_switch_init();
     Serial.println("System ready.");
 }
 
 void loop() {
-    if (millis() - lastSensorRead >= SENSOR_INTERVAL) {
-        lastSensorRead = millis();
-        readSensors();
-    }
+    
 }

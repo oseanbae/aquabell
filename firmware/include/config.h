@@ -1,65 +1,102 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// === Sensor Configuration for ESP32 ===
-#define ADC_MAX 4095.0         // 12-bit resolution
-#define VOLTAGE_REF 3.3        // ADC reference voltage (V)
+// ============================
+// === ADC Configuration ====
+// ============================
+#define ADC_MAX              4095.0    // 12-bit resolution
+#define VOLTAGE_REF          3.3       // ADC reference voltage (V)
 
-// === DHT Sensor ===
-#define DHT_PIN 32
-#define DHT_TYPE DHT11
+// ============================
+// === DHT Sensor (Temp/RH) ===
+// ============================
+#define DHT_PIN              32
+#define DHT_TYPE             DHT11
+#define DHT_READ_INTERVAL    60000     // DHT sensor read interval (ms)
 
-// === DS18B20 ===
-#define ONE_WIRE_BUS 35
+// ============================
+// === DS18B20 Sensor (Water Temp) ===
+// ============================
+#define ONE_WIRE_BUS         35
+#define DS18B20_READ_INTERVAL 60000    // DS18B20 read interval (ms)
 
-// === Turbidity Sensor ===
-#define TURBIDITY_PIN 36
-#define NUM_SAMPLES 10
-#define R1 10000.0f
-#define R2 20000.0f
-#define SENSOR_VOLTAGE_GAIN 1.5f
+// ============================
+// === Turbidity Sensor =======
+// ============================
+#define TURBIDITY_PIN        36
+#define NUM_SAMPLES          10
+#define R1                   10000.0f
+#define R2                   20000.0f
+#define SENSOR_VOLTAGE_GAIN  1.5f
 #define MAX_ADC_SAFE_VOLTAGE 3.1
+#define TURBIDITY_READ_INTERVAL 10000  // Turbidity sensor read interval (ms)
 
-// === Float Switch ===
-#define FLOAT_SWITCH_PIN 33
-#define FLOAT_SWITCH_TRIGGERED LOW // Change to HIGH if your float switch is active high
+// ============================
+// === pH Sensor ==============
+// ============================
+#define PH_SENSOR_PIN        39
+#define PH_CALIBRATION_OFFSET 0.0
+#define PH_READ_INTERVAL     30000     // pH sensor read interval (ms)
 
-// === pH Sensor === 
-#define PH_SENSOR_PIN 39 // Pin for the pH sensor
-#define PH_CALIBRATION_OFFSET 0.0  // Calibration offset for pH sensor
+// ============================
+// === Dissolved Oxygen Sensor ===
+// ============================
+#define DO_SENSOR_PIN        34
+#define DO_CAL_TEMP          30.75     // Calibration temp (°C)
+#define DO_CAL_VOLTAGE       1650.0    // Voltage (mV) at calibration
+#define DO_SENSOR_SAMPLES    32
+#define DO_READ_INTERVAL     15000     // DO sensor read interval (ms)
 
-// === DO Sensor ===
-#define DO_SENSOR_PIN 34 // Pin for the DO sensor
-#define DO_CAL_TEMP       30.75    // Temperature during calibration (°C)
-#define DO_CAL_VOLTAGE    1650.00   // DO sensor voltage in mV at that temp
-#define DO_SENSOR_SAMPLES 32 // Number of samples to average for DO sensor
-// === DS3231 RTC Module ===
-#define RTC_SDA 21 // I2C pins for ESP32
-#define RTC_SCL 22 // I2C pins for ESP32
+// ============================
+// === Float Switch ==========
+// ============================
+#define FLOAT_SWITCH_PIN     33
+#define FLOAT_SWITCH_TRIGGERED LOW     // Set to HIGH if your float switch is active high
 
-// === Relay Module ===
-#define FAN_RELAY_PIN        19 // Pin for the fan relay
-#define LIGHT_RELAY_PIN      18 // Pin for the light relay
-#define PUMP_RELAY_PIN       5  // Pin for the pump relay
-#define AIR_RELAY_PIN        17 // Pin for the air pump relay
-#define VALVE_RELAY_PIN      16 // Pin for the valve relay
+// ============================
+// === RTC (DS3231) ===========
+// ============================
+#define RTC_SDA              21
+#define RTC_SCL              22
 
-// === Rules Engine ===
-#define TEMP_THRESHOLD 32.0f // Temperature threshold for fan control
-#define HUMIDITY_THRESHOLD 80.0f // Humidity threshold for light control
-#define DISSOLVED_OXYGEN_THRESHOLD 5.0f // DO threshold for valve control
+// ============================
+// === Relay Pins =============
+// ============================
+#define FAN_RELAY_PIN        19
+#define LIGHT_RELAY_PIN      18
+#define PUMP_RELAY_PIN       5
+#define AIR_RELAY_PIN        17
+#define VALVE_RELAY_PIN      16
 
-// === Timing Configuration ===
-#define PUMP_ON_DURATION 15      // Pump ON duration in minutes
-#define PUMP_OFF_DURATION 45     // Pump OFF duration in minutes
-#define PUMP_CYCLE_DURATION (PUMP_ON_DURATION + PUMP_OFF_DURATION) // Total cycle duration in minutes
-#define LIGHT_MORNING_ON 360    // 6 * 60 = 6:00 AM
-#define LIGHT_MORNING_OFF 600   // 10 * 60 = 10:00 AM
-#define LIGHT_EVENING_ON 930    // 15 * 60 + 30 = 15:30 (3:30 PM)
-#define LIGHT_EVENING_OFF 1170  // 19 * 60 + 30 = 19:30 (7:30 PM)
+// ============================
+// === Rules / Thresholds =====
+// ============================
+#define TEMP_THRESHOLD      30.0f    // Trigger early to prevent stress
+#define TEMP_EMERGENCY      32.0f    // Force fan ON regardless of RH
+#define HUMIDITY_THRESHOLD  85.0f    // Use only *with* high temp
+#define DISSOLVED_OXYGEN_THRESHOLD  5.0f   // DO threshold for valve logic
+#define TURBIDITY_THRESHOLD         100.0f // Turbidity limit for pump logic
 
-// === Logging ===
-// Uncomment to enable Serial logging
- //#define ENABLE_LOGGING
+// ============================
+// == Schedule Configuration ==
+// ============================
+#define PUMP_ON_DURATION       15U    // Pump ON duration (minutes)
+#define PUMP_OFF_DURATION      45U    // Pump OFF duration (minutes)
+#define PUMP_CYCLE_DURATION    (PUMP_ON_DURATION + PUMP_OFF_DURATION)  // Total cycle time
+
+#define LIGHT_MORNING_ON     330      // 5:30 AM in minutes
+#define LIGHT_MORNING_OFF    540      // 9:00 AM
+#define LIGHT_EVENING_ON     900      // 3:00 PM
+#define LIGHT_EVENING_OFF    1080     // 6:00 PM
+
+// ============================
+// === Fan Runtime Control ====
+// ============================
+#define FAN_MINUTE_RUNTIME   (5UL * 60 * 1000)  // 5 minutes in ms
+
+// ============================
+// === Logging ================
+// ============================
+// #define ENABLE_LOGGING     // Uncomment to enable Serial logging
 
 #endif

@@ -1,9 +1,15 @@
 #pragma once
 #include <Arduino.h>
 
+struct DeviceState {
+    bool fan = false;
+    bool light = false;
+    bool pump = false;
+    bool air = false;
+    bool valve = false;
+};
+
 void relay_control_init();
-void check_and_control_pump();
-void check_and_control_light();
 void setRelay(int relayPin, bool state);
 void control_fan(bool state);
 void control_light(bool state);
