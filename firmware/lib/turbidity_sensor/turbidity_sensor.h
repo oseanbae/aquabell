@@ -1,5 +1,5 @@
 #pragma once
 
 void turbidity_sensor_init();
-float calculateNTU();
+float read_turbidity();
 const char* classifyTurbidity(float ntu);

@@ -20,7 +20,7 @@ float readAverageVoltage() {
 }
 
 // Calculate NTU using linear formula
-float calculateNTU() {
+float read_turbidity() {
     float v_esp32 = readAverageVoltage();     // Voltage at ESP32 ADC pin (0–3.0V max)
     float ntu = 1125.0 - 375.0 * v_esp32;     // Linear NTU mapping
     return max(ntu, 0.0f);                    // Clamp to 0 if negative

@@ -9,7 +9,7 @@ void temp_sensor_init() {
     sensor.begin();
 }
 
-float ds18b20_read() {
+float read_waterTemp() {
     float temp = sensor.getTempCByIndex(0);
     if (temp == DEVICE_DISCONNECTED_C) {
 #ifdef ENABLE_LOGGING

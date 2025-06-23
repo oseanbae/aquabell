@@ -14,7 +14,7 @@ float read_ph_voltage_avg() {
     return ((sum / float(NUM_SAMPLES)) * VOLTAGE_REF) / ADC_MAX;
 }
 
-float ph_calibrate() {
+float read_ph() {
     float v = read_ph_voltage_avg() + PH_CALIBRATION_OFFSET;
     return 7.0 + ((2.5 - v) / 0.18);  // pH slope
 }

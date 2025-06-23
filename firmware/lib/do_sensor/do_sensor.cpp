@@ -34,7 +34,7 @@ float getDOSaturationUgL(float tempC) {
   return DO_Table[t] + (DO_Table[t + 1] - DO_Table[t]) * frac;
 }
 
-float calculateDOMgL(float mV, float tempC) {
+float read_dissolveOxygen(float mV, float tempC) {
   float sat_now = getDOSaturationUgL(tempC) / 1000.0;
   float sat_cal = getDOSaturationUgL(DO_CAL_TEMP) / 1000.0;
   return (mV / DO_CAL_VOLTAGE) * (sat_now / sat_cal);

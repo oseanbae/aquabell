@@ -10,7 +10,7 @@ void float_switch_init() {
 }
 
 // Detects if the float switch was just pressed (LOW transition)
-bool float_switch_triggered() {
+bool is_float_switch_triggered() {
     int current = digitalRead(FLOAT_SWITCH_PIN);
     unsigned long now = millis();
     bool triggered = false;

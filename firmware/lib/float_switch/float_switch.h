@@ -2,4 +2,4 @@
 
 void float_switch_init();
 void float_switch_read();
-bool float_switch_triggered();
+bool is_float_switch_triggered();

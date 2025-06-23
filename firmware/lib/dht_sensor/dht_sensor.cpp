@@ -8,7 +8,7 @@ void dht_sensor_init() {
     dht.begin();
 }
 
-float dht_read_temperature() {
+float read_dhtTemp() {
     float t = dht.readTemperature();
     if (isnan(t)) {
 #ifdef ENABLE_LOGGING
@@ -19,7 +19,7 @@ float dht_read_temperature() {
     return t;
 }
 
-float dht_read_humidity() {
+float read_dhtHumidity() {
     float h = dht.readHumidity();
     if (isnan(h)) {
 #ifdef ENABLE_LOGGING
