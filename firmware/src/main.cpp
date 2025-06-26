@@ -12,10 +12,10 @@
 
 
 unsigned long last_waterTemp_read = 0;
-unsigned long last_ph_read = 0;
-unsigned long last_do_read = 0;
-unsigned long last_turbidity_read = 0;
-unsigned long last_DHT_read = 0;
+unsigned long last_ph_read = 5000;
+unsigned long last_do_read = 10000;
+unsigned long last_turbidity_read = 15000;
+unsigned long last_DHT_read = 20000;
 
 SensorData current;
 SensorBuffer sensorBuffer;
