@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
-#include <RTClib.h>  // 👈 Add this to resolve DateTime
-#include <math.h> // For NAN
+#include <RTClib.h>
+#include <math.h>
 
 
 struct SensorData {
