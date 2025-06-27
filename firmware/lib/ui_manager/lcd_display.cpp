@@ -26,7 +26,7 @@ void lcd_init() {
     lastInteractionTime = millis();
 }
 
-// --- DISPLAY LOGIC ---
+// --- CORE DISPLAY FUNCTION ---
 void lcd_display(const SensorData& data, int page) {
     lcd.clear();
 
@@ -56,14 +56,14 @@ void lcd_display(const SensorData& data, int page) {
     }
 }
 
-// --- BUTTON HANDLING ---
-void handle_button_press(const SensorData& sensorData) {
+// --- DISPLAY UPDATE HANDLER ---
+void lcd_display_update(const SensorData& sensorData) {
     static unsigned long lastPressTime = 0;
     unsigned long currentTime = millis();
 
+    // --- Handle Button Press ---
     if (digitalRead(BUTTON_NEXT) == LOW && (currentTime - lastPressTime) > DEBOUNCE_DELAY) {
         currentPage = (currentPage + 1) % TOTAL_PAGES;
-        lcd_display(sensorData, currentPage);
         lastPressTime = currentTime;
         lastInteractionTime = currentTime;
 
@@ -72,17 +72,23 @@ void handle_button_press(const SensorData& sensorData) {
             backlightOn = true;
         }
 
-        // Feedback
+        lcd_display(sensorData, currentPage);  // Show new page
+
         digitalWrite(BUZZER_PIN, HIGH);
         delay(100);
         digitalWrite(BUZZER_PIN, LOW);
-    }
-}
 
-// --- BACKLIGHT IDLE TIMEOUT ---
-void lcd_backlight_idle_check() {
-    if (backlightOn && (millis() - lastInteractionTime > LCD_IDLE_TIMEOUT)) {
+        return;  // Done for this frame
+    }
+
+    // --- Backlight Timeout ---
+    if (backlightOn && (currentTime - lastInteractionTime > LCD_IDLE_TIMEOUT)) {
         lcd.noBacklight();
         backlightOn = false;
+    }
+
+    // --- Refresh Page if Active ---
+    if (backlightOn) {
+        lcd_display(sensorData, currentPage);
     }
 }

@@ -95,11 +95,8 @@ void loop() {
         #endif
     }
 
-    // ✅ User display logic
-    handle_button_press(current);               // Checks if button is pressed
-    lcd_display(current, currentPage);          // Displays selected page
-    lcd_backlight_idle_check();                 // Turns off backlight after timeout
-
+    // 🔁 Unified LCD update handler
+    lcd_display_update(current);
     // Optionally enable control logic
     // apply_rules(current);
 
