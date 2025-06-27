@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "config.h"
+
 #include "temp_sensor.h"
 #include "ph_sensor.h"
 #include "do_sensor.h"
@@ -7,8 +8,10 @@
 #include "dht_sensor.h"
 #include "float_switch.h"
 #include "sensor_data.h"
+
 #include "rule_engine.h"
 
+#include "lcd_display.h"
 
 
 unsigned long last_waterTemp_read = 0;
@@ -36,11 +39,8 @@ void loop() {
     unsigned long now = millis();
 
     if (now - last_waterTemp_read >= DS18B20_READ_INTERVAL) {
-        
-        float temp = read_dhtTemp(); // from temp_sensor.h
-        if (!isnan(temp)) {
-            current.airTemp = temp;
-        }
+        float temp = read_waterTemp();
+        if (!isnan(temp)) current.waterTemp = temp;
         #ifdef ENABLE_LOGGING
             Serial.print("Water Temp: "); Serial.println(current.waterTemp);
         #endif
@@ -48,41 +48,29 @@ void loop() {
     }
 
     if (now - last_ph_read >= PH_READ_INTERVAL) {
-
-        float ph = read_ph();  // from ph_sensor.h
-        if (!isnan(ph)) {
-            current.pH = ph;
-        }
+        float ph = read_ph();
+        if (!isnan(ph)) current.pH = ph;
         #ifdef ENABLE_LOGGING
-           Serial.print("pH: "); Serial.println(current.pH);
+            Serial.print("pH: "); Serial.println(current.pH);
         #endif
         last_ph_read = now;
     }
 
     if (now - last_do_read >= DO_READ_INTERVAL) {
-
-        float doVoltage = readDOVoltage();  // from do_sensor.h
-        float dissolveOxygenMgL = read_dissolveOxygen(doVoltage, current.waterTemp);  // from do_sensor.h
-
-        if (!isnan(dissolveOxygenMgL)) {
-            current.dissolvedOxygen = dissolveOxygenMgL;
-        }
-
+        float doVoltage = readDOVoltage();
+        float dissolveOxygenMgL = read_dissolveOxygen(doVoltage, current.waterTemp);
+        if (!isnan(dissolveOxygenMgL)) current.dissolvedOxygen = dissolveOxygenMgL;
         #ifdef ENABLE_LOGGING
-            Serial.print("Dissolved Oxygen (mg/L): "); Serial.println(current.dissolvedOxygen);
+            Serial.print("Dissolved Oxygen: "); Serial.println(current.dissolvedOxygen);
         #endif
         last_do_read = now;
     }
 
     if (now - last_turbidity_read >= TURBIDITY_READ_INTERVAL) {
-        float turbudityNTU = read_turbidity();  // from turbidity_sensor.h
-
-        if (!isnan(turbudityNTU)) {
-            current.turbidityNTU = turbudityNTU;
-        }
-
+        float turbidityNTU = read_turbidity();
+        if (!isnan(turbidityNTU)) current.turbidityNTU = turbidityNTU;
         #ifdef ENABLE_LOGGING
-            Serial.print("Turbidity (NTU): "); Serial.println(current.turbidityNTU);
+            Serial.print("Turbidity: "); Serial.println(current.turbidityNTU);
         #endif
         last_turbidity_read = now;
     }
@@ -90,12 +78,8 @@ void loop() {
     if (now - last_DHT_read >= DHT_READ_INTERVAL) {
         float airTemp = read_dhtTemp();
         float airHumidity = read_dhtHumidity();
-
-        if (!isnan(airTemp) && !isnan(airHumidity)) {
-            current.airTemp = airTemp;
-            current.airHumidity = airHumidity;
-        }
-
+        if (!isnan(airTemp)) current.airTemp = airTemp;
+        if (!isnan(airHumidity)) current.airHumidity = airHumidity;
         #ifdef ENABLE_LOGGING
             Serial.print("Air Temp: "); Serial.println(current.airTemp);
             Serial.print("Humidity: "); Serial.println(current.airHumidity);
@@ -103,16 +87,21 @@ void loop() {
         last_DHT_read = now;
     }
 
-    // Float switch (no interval-based reading)
+    // Float switch (continuous check)
     current.floatTriggered = is_float_switch_triggered();
-    if (current.floatTriggered ) {
-        
+    if (current.floatTriggered) {
         #ifdef ENABLE_LOGGING
-            Serial.print("Water Temp: "); Serial.println(current.waterTemp);
+            Serial.println("Float switch triggered!");
         #endif
     }
-    // Add rules logic
-   // apply_rules(current);  // if you want auto-actuation
-    yield();
-    
+
+    // ✅ User display logic
+    handle_button_press(current);               // Checks if button is pressed
+    lcd_display(current, currentPage);          // Displays selected page
+    lcd_backlight_idle_check();                 // Turns off backlight after timeout
+
+    // Optionally enable control logic
+    // apply_rules(current);
+
+    yield(); // Keep the system responsive
 }

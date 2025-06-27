@@ -139,6 +139,25 @@
 // ============================
 #define RTC_SDA               21
 #define RTC_SCL               22
+#define RTC_ADDRESS           0x68
+
+// ============================
+// === 16x2 I2C LCD Display ===
+// ============================
+#define LCD_SDA               21
+#define LCD_SCL               22
+#define LCD_ADDR              0x27
+#define LCD_COLS              16
+#define LCD_ROWS              2
+#define LCD_IDLE_TIMEOUT      15000  // ms
+#define LCD_BACKLIGHT_ON      true
+#define LCD_BACKLIGHT_OFF     false
+#define DEBOUNCE_DELAY        50    // ms
+#define BUTTON_NEXT           25
+#define BUZZER_PIN            26
+#define LED_PIN               27
+#define TOTAL_PAGES           3
+
 
 // ============================
 // === Relay Control ==========
