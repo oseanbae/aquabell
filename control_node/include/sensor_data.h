@@ -2,7 +2,6 @@
 #include <Arduino.h>
 #include <math.h>
 
-
 struct SensorData {
     float waterTemp = NAN;         // Water temperature in Celsius
     float pH = NAN;                // pH level

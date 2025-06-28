@@ -29,6 +29,11 @@
 #define LIGHT_EVENING_ON       900   // 3:00 PM
 #define LIGHT_EVENING_OFF      1080  // 6:00 PM
 
+// === RTC Pins ==============
+#define RTC_SDA               21
+#define RTC_SCL               22
+#define RTC_ADDRESS           0x68
+
 //MQTT Broker Configuration
 #define MQTT_BROKER           "5f44c70b14974776848ac3161f348729.s1.eu.hivemq.cloud  "
 #define MQTT_PORT             8883
@@ -39,4 +44,4 @@
 
 // WIFI Configuration
 #define WIFI_SSID             "meow_5G"
-#define WIFI_PASSWORD         "byeworld2025"
+#define WIFI_PASSWORD         "byeworld5g"

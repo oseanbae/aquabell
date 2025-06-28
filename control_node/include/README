@@ -35,3 +35,37 @@ Read more about using header files in official GCC documentation:
 * Computed Includes
 
 https://gcc.gnu.org/onlinedocs/cpp/Header-Files.html
+
+
+// Network libraries
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+
+
+WiFiClientSecure espClient;
+PubSubClient mqttClient(espClient);
+
+void wifi_init() {
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("Connected to WiFi");
+}
+
+void mqtt_init() {
+    espClient.setInsecure(); // Use insecure connection for simplicity, consider using certificates in production
+    
+    while (!mqttClient.connected()) {
+        Serial.print("Connecting to MQTT...");
+        if (mqttClient.connect("AquabellClient", MQTT_USER, MQTT_PASSWORD)) {
+            Serial.println("connected");
+        } else {
+            Serial.print("failed, rc=");
+            Serial.print(mqttClient.state());
+            delay(2000);
+        }
+    }
+}
