@@ -1,5 +1,5 @@
 #include "do_sensor.h"
-#include "config.h"
+#include "sensor_config.h"
 #include <Arduino.h>
 
 // DO saturation lookup table (µg/L at 0–40°C)

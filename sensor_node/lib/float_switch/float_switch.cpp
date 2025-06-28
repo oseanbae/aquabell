@@ -1,5 +1,5 @@
 #include "Arduino.h"
-#include "config.h"
+#include "sensor_config.h"
 
 static bool lastState = HIGH;
 static unsigned long lastDebounceTime = 0;

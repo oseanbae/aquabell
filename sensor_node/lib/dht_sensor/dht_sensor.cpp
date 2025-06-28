@@ -1,6 +1,6 @@
 #include "dht_sensor.h"
 #include "DHT.h"
-#include "config.h"
+#include "sensor_config.h"
 
 DHT dht(DHT_PIN, DHT_TYPE);
 

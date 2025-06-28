@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "config.h"
+#include "sensor_config.h"
 
 // Sensor libraries
 #include "temp_sensor.h"

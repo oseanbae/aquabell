@@ -1,11 +1,9 @@
 #pragma once
 #include <Arduino.h>
-#include <RTClib.h>
 #include <math.h>
 
 
 struct SensorData {
-    DateTime timestamp;
     float waterTemp = NAN;         // Water temperature in Celsius
     float pH = NAN;                // pH level
     float dissolvedOxygen = NAN;   // Dissolved oxygen level

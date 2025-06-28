@@ -1,5 +1,5 @@
 #include "Arduino.h"
-#include "config.h"
+#include "sensor_config.h"
 
 void ph_sensor_init() {
     pinMode(PH_SENSOR_PIN, INPUT);

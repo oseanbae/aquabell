@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "config.h"
+#include "sensor_config.h"
 #include "RTClib.h"
 #include "relay_control.h"
 #include "sensor_data.h"
