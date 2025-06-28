@@ -3,7 +3,7 @@
 #include <math.h>
 
 
-struct SensorData {
+struct RealTimeData {
     float waterTemp = NAN;         // Water temperature in Celsius
     float pH = NAN;                // pH level
     float dissolvedOxygen = NAN;   // Dissolved oxygen level
@@ -13,23 +13,23 @@ struct SensorData {
     bool floatTriggered = false;
 };
 
-struct SensorBuffer {
+struct BatchData {
     float waterTempSum = 0;
-    float waterTempCount = 0;
+    uint16_t  waterTempCount = 0;
 
     float pHSum = 0;
-    float pHCount = 0;
+    uint16_t pHCount = 0;
 
     float doSum;
-    float doCount;
+    uint16_t doCount;
 
     float turbiditySum = 0;
-    float turbidityCount = 0;
+    uint16_t  turbidityCount = 0;
 
     float airTempSum = 0;
-    float airTempCount = 0;
+    uint16_t  airTempCount = 0;
 
     float airHumiditySum = 0;
-    float airHumidityCount = 0;
+    uint16_t  airHumidityCount = 0;
 
 };

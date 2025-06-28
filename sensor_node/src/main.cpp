@@ -29,8 +29,8 @@ unsigned long last_do_read = 10000;
 unsigned long last_turbidity_read = 15000;
 unsigned long last_DHT_read = 20000;
 
-SensorData current;
-SensorBuffer sensorBuffer;
+RealTimeData current; // Use RealTimeData for real-time updates
+BatchData sensorBuffer;
 
 void wifi_init() {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -110,7 +110,7 @@ void loop() {
     current.floatTriggered = is_float_switch_triggered();
 
     // 🔁 Unified LCD update handler
-    lcd_display_update(current);
+    //lcd_display_update(current);
     // Optionally enable control logic
     // apply_rules(current);
 

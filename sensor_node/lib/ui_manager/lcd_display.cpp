@@ -27,7 +27,7 @@ void lcd_init() {
 }
 
 // --- CORE DISPLAY FUNCTION ---
-void lcd_display(const SensorData& data, int page) {
+void lcd_display(const RealTimeData& data, int page) {
     lcd.clear();
 
     switch (page) {
@@ -57,7 +57,7 @@ void lcd_display(const SensorData& data, int page) {
 }
 
 // --- DISPLAY UPDATE HANDLER ---
-void lcd_display_update(const SensorData& sensorData) {
+void lcd_display_update(const RealTimeData& RealTimeData) {
     static unsigned long lastPressTime = 0;
     unsigned long currentTime = millis();
 
@@ -72,7 +72,7 @@ void lcd_display_update(const SensorData& sensorData) {
             backlightOn = true;
         }
 
-        lcd_display(sensorData, currentPage);  // Show new page
+        lcd_display(RealTimeData, currentPage);  // Show new page
 
         digitalWrite(BUZZER_PIN, HIGH);
         delay(100);
@@ -89,6 +89,6 @@ void lcd_display_update(const SensorData& sensorData) {
 
     // --- Refresh Page if Active ---
     if (backlightOn) {
-        lcd_display(sensorData, currentPage);
+        lcd_display(RealTimeData, currentPage);
     }
 }

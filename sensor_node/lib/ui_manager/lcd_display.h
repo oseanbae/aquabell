@@ -4,4 +4,4 @@
 extern int currentPage;
 
 void lcd_init();
-void lcd_display_update(const SensorData& sensorData);
+void lcd_display_update(const RealTimeData& RealTimeData);

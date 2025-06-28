@@ -76,7 +76,7 @@ void check_and_control_light(DateTime now) {
 }
 
 // ==== CENTRAL RULE DISPATCH ====
-void apply_rules(SensorData &current) {
+void apply_rules(RealTimeData &current) {
     DateTime now = rtc.now();
     int currentMinutes = now.hour() * 60 + now.minute();
 
