@@ -11,6 +11,7 @@ struct RealTimeData {
     float airTemp = NAN;           // Air temperature in Celsius
     float airHumidity = NAN;       // Air humidity in percentage
     bool floatTriggered = false;
+    bool isBatch = false;          // Indicates if this data is part of a batch
 };
 
 struct BatchData {
@@ -20,8 +21,8 @@ struct BatchData {
     float pHSum = 0;
     uint16_t pHCount = 0;
 
-    float doSum;
-    uint16_t doCount;
+    float doSum = 0;
+    uint16_t doCount = 0;
 
     float turbiditySum = 0;
     uint16_t  turbidityCount = 0;
