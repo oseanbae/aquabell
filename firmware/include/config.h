@@ -1,15 +1,11 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// ============================
 // === ADC / General =========
-// ============================
 #define ADC_MAX               4095.0
 #define VOLTAGE_REF           3.3
 
-// ============================
 // === DHT Sensor (Air Temp/RH)
-// ============================
 #define DHT_PIN               32
 #define DHT_TYPE              DHT11
 #define DHT_READ_INTERVAL     60000  // ms
@@ -21,9 +17,7 @@
 #define HUMIDITY_OFF_THRESHOLD 75.0f
 #define TEMP_EMERGENCY        32.0f
 
-// ============================
 // === DS18B20 (Water Temp) ===
-// ============================
 #define ONE_WIRE_BUS             35
 #define DS18B20_READ_INTERVAL    60000  // ms
 
@@ -40,30 +34,22 @@
     TEMP_CAUTION_HIGH(temp)  ? "Caution High"  : \
     TEMP_CRITICAL_HIGH(temp) ? "Critical High" : "Unknown")
 
-// ============================
 // === Fan Runtime Control ====
-// ============================
 #define FAN_MINUTE_RUNTIME     (5UL * 60 * 1000)    // 5 min in ms
 #define FAN_MAX_CONTINUOUS_MS  (60UL * 60 * 1000)   // 1 hour safety limit
 
-// ============================
 // === Pump Control =========
-// ============================
 #define PUMP_ON_DURATION       15U   // minutes
 #define PUMP_OFF_DURATION      45U   // minutes
 #define PUMP_CYCLE_DURATION    (PUMP_ON_DURATION + PUMP_OFF_DURATION)
 
-// ============================
 // === Grow Light Schedule ===
-// ============================
 #define LIGHT_MORNING_ON       330   // 5:30 AM
 #define LIGHT_MORNING_OFF      540   // 9:00 AM
 #define LIGHT_EVENING_ON       900   // 3:00 PM
 #define LIGHT_EVENING_OFF      1080  // 6:00 PM
 
-// ============================
 // === Turbidity =============
-// ============================
 #define TURBIDITY_PIN           36
 #define TURBIDITY_READ_INTERVAL 10000  // ms
 #define NUM_SAMPLES             10
@@ -86,9 +72,7 @@
     NTU_POOR(ntu) ? "Poor" : \
     NTU_UNACCEPTABLE(ntu) ? "Very Poor" : "Unknown")
 
-// ============================
 // === pH Sensor =============
-// ============================
 #define PH_SENSOR_PIN         39
 #define PH_CALIBRATION_OFFSET 0.0
 #define PH_READ_INTERVAL      30000  // ms
@@ -106,9 +90,7 @@
     PH_CAUTION_HIGH(pH) ? "Caution High" : \
     PH_CRITICAL_HIGH(pH) ? "Critical High" : "Unknown")
 
-// ============================
 // === DO Sensor =============
-// ============================
 #define DO_SENSOR_PIN         34
 #define DO_CAL_TEMP           30.75f
 #define DO_CAL_VOLTAGE        1650.0f
@@ -128,22 +110,16 @@
     DO_OPTIMAL(do) ? "Optimal" : \
     DO_UPPER_SAFE(do) ? "Upper Safe" : "Unknown")
 
-// ============================
 // === Float Switch ==========
-// ============================
 #define FLOAT_SWITCH_PIN      33
 #define FLOAT_SWITCH_TRIGGERED LOW
 
-// ============================
 // === RTC Pins ==============
-// ============================
 #define RTC_SDA               21
 #define RTC_SCL               22
 #define RTC_ADDRESS           0x68
 
-// ============================
 // === 16x2 I2C LCD Display ===
-// ============================
 #define LCD_SDA               21
 #define LCD_SCL               22
 #define LCD_ADDR              0x27
@@ -159,18 +135,27 @@
 #define TOTAL_PAGES           3
 
 
-// ============================
 // === Relay Control ==========
-// ============================
 #define FAN_RELAY_PIN         19
 #define LIGHT_RELAY_PIN       18
 #define PUMP_RELAY_PIN        5
 #define AIR_RELAY_PIN         17
 #define VALVE_RELAY_PIN       16
 
-// ============================
+//MQTT Broker Configuration
+#define MQTT_BROKER           "5f44c70b14974776848ac3161f348729.s1.eu.hivemq.cloud  "
+#define MQTT_PORT             8883
+#define MQTT_USER             "aquabell_client"
+#define MQTT_PASSWORD         "aquabellhiveMQ413"
+#define SSL_CERTIFICATE "-----BEGIN CERTIFICATE-----\n...paste the full cert...\n-----END CERTIFICATE-----\n"
+
+
+
+// WIFI Configuration
+#define WIFI_SSID             "meow_5G"
+#define WIFI_PASSWORD         "byeworld2025"
+
 // === Optional Logging =======
-// ============================
 // #define ENABLE_LOGGING     // Uncomment to enable Serial output
 
 #endif

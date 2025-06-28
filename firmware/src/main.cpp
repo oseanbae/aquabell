@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "config.h"
 
+// Sensor libraries
 #include "temp_sensor.h"
 #include "ph_sensor.h"
 #include "do_sensor.h"
@@ -9,10 +10,18 @@
 #include "float_switch.h"
 #include "sensor_data.h"
 
+// Display libraries
 #include "rule_engine.h"
-
 #include "lcd_display.h"
 
+// Network libraries
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+
+
+WiFiClientSecure espClient;
+PubSubClient mqttClient(espClient);
 
 unsigned long last_waterTemp_read = 0;
 unsigned long last_ph_read = 5000;
@@ -23,9 +32,35 @@ unsigned long last_DHT_read = 20000;
 SensorData current;
 SensorBuffer sensorBuffer;
 
+void wifi_init() {
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("Connected to WiFi");
+}
+
+void mqtt_init() {
+    espClient.setInsecure(); // Use insecure connection for simplicity, consider using certificates in production
+    
+    while (!mqttClient.connected()) {
+        Serial.print("Connecting to MQTT...");
+        if (mqttClient.connect("AquabellClient", MQTT_USER, MQTT_PASSWORD)) {
+            Serial.println("connected");
+        } else {
+            Serial.print("failed, rc=");
+            Serial.print(mqttClient.state());
+            delay(2000);
+        }
+    }
+}
 void setup() {
     Serial.begin(115200);
     delay(2000); // Let Serial and sensors stabilize
+
+    wifi_init();
+    mqtt_init();
     temp_sensor_init();
     ph_sensor_init();
     do_sensor_init();
@@ -41,18 +76,12 @@ void loop() {
     if (now - last_waterTemp_read >= DS18B20_READ_INTERVAL) {
         float temp = read_waterTemp();
         if (!isnan(temp)) current.waterTemp = temp;
-        #ifdef ENABLE_LOGGING
-            Serial.print("Water Temp: "); Serial.println(current.waterTemp);
-        #endif
         last_waterTemp_read = now;
     }
 
     if (now - last_ph_read >= PH_READ_INTERVAL) {
         float ph = read_ph();
         if (!isnan(ph)) current.pH = ph;
-        #ifdef ENABLE_LOGGING
-            Serial.print("pH: "); Serial.println(current.pH);
-        #endif
         last_ph_read = now;
     }
 
@@ -60,18 +89,12 @@ void loop() {
         float doVoltage = readDOVoltage();
         float dissolveOxygenMgL = read_dissolveOxygen(doVoltage, current.waterTemp);
         if (!isnan(dissolveOxygenMgL)) current.dissolvedOxygen = dissolveOxygenMgL;
-        #ifdef ENABLE_LOGGING
-            Serial.print("Dissolved Oxygen: "); Serial.println(current.dissolvedOxygen);
-        #endif
         last_do_read = now;
     }
 
     if (now - last_turbidity_read >= TURBIDITY_READ_INTERVAL) {
         float turbidityNTU = read_turbidity();
         if (!isnan(turbidityNTU)) current.turbidityNTU = turbidityNTU;
-        #ifdef ENABLE_LOGGING
-            Serial.print("Turbidity: "); Serial.println(current.turbidityNTU);
-        #endif
         last_turbidity_read = now;
     }
 
@@ -80,20 +103,11 @@ void loop() {
         float airHumidity = read_dhtHumidity();
         if (!isnan(airTemp)) current.airTemp = airTemp;
         if (!isnan(airHumidity)) current.airHumidity = airHumidity;
-        #ifdef ENABLE_LOGGING
-            Serial.print("Air Temp: "); Serial.println(current.airTemp);
-            Serial.print("Humidity: "); Serial.println(current.airHumidity);
-        #endif
         last_DHT_read = now;
     }
 
     // Float switch (continuous check)
     current.floatTriggered = is_float_switch_triggered();
-    if (current.floatTriggered) {
-        #ifdef ENABLE_LOGGING
-            Serial.println("Float switch triggered!");
-        #endif
-    }
 
     // 🔁 Unified LCD update handler
     lcd_display_update(current);
