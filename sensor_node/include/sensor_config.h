@@ -3,11 +3,11 @@
 
 // === ADC / General =========
 #define ADC_MAX               4095.0
-#define VOLTAGE_REF           3.3
+#define VOLTAGE_REF           3300.0f
 
 // === DHT Sensor (Air Temp/RH)
 #define DHT_PIN               32
-#define DHT_TYPE              DHT11
+#define DHT_TYPE              11
 #define DHT_READ_INTERVAL     60000  // ms
 
 // === DS18B20 (Water Temp) ===
@@ -33,7 +33,7 @@
 #define NUM_SAMPLES             10
 #define R1                      10000.0f
 #define R2                      20000.0f
-#define SENSOR_VOLTAGE_GAIN     1.5f
+#define SENSOR_VOLTAGE_GAIN     ((R1 + R2) / R2)  // = 1.5
 #define MAX_ADC_SAFE_VOLTAGE    3.1f
 #define TURBIDITY_THRESHOLD     100.0f
 
@@ -52,8 +52,11 @@
 
 // === pH Sensor =============
 #define PH_SENSOR_PIN         39
-#define PH_CALIBRATION_OFFSET 0.0
-#define PH_READ_INTERVAL      30000  // ms
+#define PH_SENSOR_SAMPLES     10
+#define NEUTRAL_PH            7.0       // neutral pH
+#define NEUTRAL_VOLTAGE_MV    1773.0    // << Measure actual voltage when in pH 7 buffer
+#define MV_PER_PH            -59.16    // Approximate Nernst slope at 25°C
+#define PH_READ_INTERVAL      30000    // ms
 
 #define PH_CRITICAL_LOW(pH)   ((pH) < 6.0)
 #define PH_CAUTION_LOW(pH)    ((pH) >= 6.0 && (pH) < 6.5)
@@ -70,8 +73,8 @@
 
 // === DO Sensor =============
 #define DO_SENSOR_PIN         34
-#define DO_CAL_TEMP           30.75f
-#define DO_CAL_VOLTAGE        1650.0f
+#define DO_CAL_TEMP           31.37    // °C from your calibration
+#define DO_CAL_VOLTAGE        453.14   // mV from your calibration
 #define DO_SENSOR_SAMPLES     32
 #define DO_READ_INTERVAL      15000  // ms
 

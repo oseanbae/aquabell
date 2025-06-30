@@ -31,6 +31,9 @@ void setup() {
     Serial.begin(115200);
     delay(2000); // Let Serial and sensors stabilize
     
+    analogReadResolution(12);
+    analogSetAttenuation(ADC_11db);
+    
     temp_sensor_init();
     ph_sensor_init();
     do_sensor_init();
@@ -64,7 +67,7 @@ void loop() {
 
     // pH
     if (now - last_ph_read >= PH_READ_INTERVAL) {
-        float ph = read_ph(current.waterTemp);
+        float ph = read_ph();
         if (!isnan(ph)) {
             current.pH = ph;
             sensorBuffer.pHSum += ph;
