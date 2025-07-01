@@ -1,32 +1,42 @@
 #include "Arduino.h"
-#include "sensor_config.h"
+#include "sensor_config.h"  // defines FLOAT_SWITCH_PIN
+#include "float_switch.h"
 
-static bool lastState = HIGH;
+// Debounce state tracking
+static bool lastStableState = HIGH;
+static bool lastRawState = HIGH;
 static unsigned long lastDebounceTime = 0;
-const unsigned long debounceDelay = 50;  // ms
+const unsigned long debounceDelay = 50; // milliseconds
 
 void float_switch_init() {
-    pinMode(FLOAT_SWITCH_PIN, INPUT_PULLUP);
+    pinMode(FLOAT_SWITCH_PIN, INPUT_PULLUP); // Assumes float switch pulls LOW when water is low
 }
 
-// Detects if the float switch was just pressed (LOW transition)
-bool is_float_switch_triggered() {
-    int current = digitalRead(FLOAT_SWITCH_PIN);
-    unsigned long now = millis();
-    bool triggered = false;
+// Returns true if float switch is currently LOW (water is low)
+bool float_switch_active() {
+    return digitalRead(FLOAT_SWITCH_PIN) == LOW;
+}
 
-    if (current != lastState && (now - lastDebounceTime > debounceDelay)) {
+// Returns true once when float changes from HIGH → LOW (water just became low)
+bool is_float_switch_triggered() {
+    bool triggered = false;
+    int reading = digitalRead(FLOAT_SWITCH_PIN);
+    unsigned long now = millis();
+
+    // Debounce logic
+    if (reading != lastRawState) {
         lastDebounceTime = now;
-        if (current == LOW && lastState == HIGH) {
-            triggered = true;
+        lastRawState = reading;
+    }
+
+    if ((now - lastDebounceTime) > debounceDelay) {
+        if (reading != lastStableState) {
+            if (lastStableState == HIGH && reading == LOW) {
+                triggered = true; // Transition HIGH → LOW
+            }
+            lastStableState = reading;
         }
     }
 
-    lastState = current;
     return triggered;
-}
-
-// Returns true if the float switch is currently pressed (LOW)
-bool float_switch_active() {
-    return digitalRead(FLOAT_SWITCH_PIN) == LOW;
 }

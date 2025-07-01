@@ -3,6 +3,8 @@
 #include <Arduino.h>
 
 // DO saturation lookup table (µg/L at 0–40°C)
+// DFRobot's SEN0244 sensor uses a linear interpolation based on temperature.
+// The values are based on the saturation of oxygen in water at different temperatures.
 static const uint16_t DO_Table[41] = {
     14460, 14220, 13820, 13440, 13090, 12740, 12420, 12110, 11810, 11530,
     11260, 11010, 10770, 10530, 10300, 10080, 9860, 9660, 9460, 9270,

@@ -1,6 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+
 // === ADC / General =========
 #define ADC_MAX               4095.0
 #define VOLTAGE_REF           3300.0f

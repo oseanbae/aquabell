@@ -33,7 +33,7 @@ void setup() {
     
     analogReadResolution(12);
     analogSetAttenuation(ADC_11db);
-    
+
     temp_sensor_init();
     ph_sensor_init();
     do_sensor_init();
@@ -141,7 +141,8 @@ void loop() {
     }
 
     // Float switch (continuous)
-    current.floatTriggered = is_float_switch_triggered();
+    current.floatTriggered = float_switch_active();  // true = water low
+
 
     // Send 5-minute batch average
     if (now - last_batch_send >= 300000) {
