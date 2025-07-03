@@ -17,16 +17,13 @@ float readAverageVoltage() {
     return avgRaw * (VOLTAGE_REF / ADC_MAX);  // Returns voltage at ESP32 ADC pin
 }
 
-// Read turbidity in NTU (Nephelometric Turbidity Units)
+// === Convert voltage to NTU ===
 float read_turbidity() {
-    float v_adc = readAverageVoltage();               // Voltage at ESP32 pin
-    float v_sensor = v_adc * SENSOR_VOLTAGE_GAIN;     // Actual sensor output voltage
-
-    // Empirical nonlinear NTU mapping for SEN0189
-    float ntu = -1120.4f * v_sensor * v_sensor + 5742.3f * v_sensor - 4352.9f;
-    return max(ntu, 0.0f);                            // Clamp to 0
+    float v_adc = readAverageVoltage();                // Voltage at ESP32 pin (0–3.0V)
+    float v_sensor = v_adc * SENSOR_VOLTAGE_GAIN;      // Actual sensor output (0–4.5V)
+    float ntu = NTU_OFFSET + NTU_SLOPE * v_sensor;     // Linear mapping
+    return max(ntu, 0.0f);                              // Clamp negative values
 }
-
 
 // Classify water quality based on NTU
 const char* classifyTurbidity(float ntu) {

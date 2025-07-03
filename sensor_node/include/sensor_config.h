@@ -4,7 +4,8 @@
 
 // === ADC / General =========
 #define ADC_MAX               4095.0
-#define VOLTAGE_REF           3300.0f
+#define VOLTAGE_REF           3.3f
+#define ADC_VOLTAGE_MV        3300.0f // Reference voltage in mV
 
 // === DHT Sensor (Air Temp/RH)
 #define DHT_PIN               32
@@ -37,6 +38,10 @@
 #define SENSOR_VOLTAGE_GAIN     ((R1 + R2) / R2)  // = 1.5
 #define MAX_ADC_SAFE_VOLTAGE    3.1f
 #define TURBIDITY_THRESHOLD     100.0f
+
+// NTU Mapping Constants (linear)
+#define NTU_SLOPE                -375.0f
+#define NTU_OFFSET               1125.0f
 
 #define NTU_OPTIMAL_CLEAR(ntu)      ((ntu) <= 50)
 #define NTU_ACCEPTABLE(ntu)         ((ntu) > 50 && (ntu) <= 100)
