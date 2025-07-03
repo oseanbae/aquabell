@@ -50,78 +50,84 @@ void setup() {
 void loop() {
     unsigned long now = millis();
 
+    static unsigned long lastRealtimeSend = 0;
+    static unsigned long lastLCDRefresh = 0;
+    static unsigned long lastButtonPress = 0;
+
+    bool dataChanged = false;
+
+    // --- Read Sensors ---
+
     // Water Temp
-    if (now - last_waterTemp_read >= DS18B20_READ_INTERVAL) {
+    if (now >= last_waterTemp_read) {
         float temp = read_waterTemp();
         if (!isnan(temp)) {
             current.waterTemp = temp;
             sensorBuffer.waterTempSum += temp;
             sensorBuffer.waterTempCount++;
-
-            RealTimeData packet = current;
-            packet.isBatch = false;
-            sendESPNow(packet);
+            dataChanged = true;
+        } else {
+            Serial.println("Error: Water temp read failed.");
         }
-        last_waterTemp_read = now;
+        last_waterTemp_read += DS18B20_READ_INTERVAL;
     }
 
     // pH
-    if (now - last_ph_read >= PH_READ_INTERVAL) {
+    if (now >= last_ph_read) {
         float ph = read_ph();
         if (!isnan(ph)) {
-            current.pH = ph;
-            sensorBuffer.pHSum += ph;
+            current.pH = constrain(ph, 0.0, 14.0);
+            sensorBuffer.pHSum += current.pH;
             sensorBuffer.pHCount++;
-
-            RealTimeData packet = current;
-            packet.isBatch = false;
-            sendESPNow(packet);
+            dataChanged = true;
+        } else {
+            Serial.println("Error: pH read failed.");
         }
-        last_ph_read = now;
+        last_ph_read += PH_READ_INTERVAL;
     }
 
-    // Dissolved O2
-    if (now - last_do_read >= DO_READ_INTERVAL) {
-        float doVoltage = readDOVoltage();
-        float dissolveOxygenMgL = read_dissolveOxygen(doVoltage, current.waterTemp);
-        if (!isnan(dissolveOxygenMgL)) {
-            current.dissolvedOxygen = dissolveOxygenMgL;
-            sensorBuffer.doSum += dissolveOxygenMgL;
+    // Dissolved Oxygen
+    if (now >= last_do_read) {
+        float voltage = readDOVoltage();
+        float doVal = read_dissolveOxygen(voltage, current.waterTemp);
+        if (!isnan(doVal)) {
+            current.dissolvedOxygen = max(doVal, 0.0f);  // Avoid negative values
+            sensorBuffer.doSum += doVal;
             sensorBuffer.doCount++;
-
-            RealTimeData packet = current;
-            packet.isBatch = false;
-            sendESPNow(packet);
+            dataChanged = true;
+        } else {
+            Serial.println("Error: DO read failed.");
         }
-        last_do_read = now;
+        last_do_read += DO_READ_INTERVAL;
     }
 
     // Turbidity
-    if (now - last_turbidity_read >= TURBIDITY_READ_INTERVAL) {
-        float turbidityNTU = read_turbidity();
-        if (!isnan(turbidityNTU)) {
-            current.turbidityNTU = turbidityNTU;
-            sensorBuffer.turbiditySum += turbidityNTU;
+    if (now >= last_turbidity_read) {
+        float ntu = read_turbidity();
+        if (!isnan(ntu)) {
+            current.turbidityNTU = max(ntu, 0.0f);
+            sensorBuffer.turbiditySum += ntu;
             sensorBuffer.turbidityCount++;
-
-            RealTimeData packet = current;
-            packet.isBatch = false;
-            sendESPNow(packet);
+            dataChanged = true;
+        } else {
+            Serial.println("Error: Turbidity read failed.");
         }
-        last_turbidity_read = now;
+        last_turbidity_read += TURBIDITY_READ_INTERVAL;
     }
 
-    // Air Temp & Humidity
-    if (now - last_DHT_read >= DHT_READ_INTERVAL) {
+    // Air Temp / Humidity
+    if (now >= last_DHT_read) {
         float airTemp = read_dhtTemp();
         float airHumidity = read_dhtHumidity();
-
         bool updated = false;
+
         if (!isnan(airTemp)) {
             current.airTemp = airTemp;
             sensorBuffer.airTempSum += airTemp;
             sensorBuffer.airTempCount++;
             updated = true;
+        } else {
+            Serial.println("Error: DHT temp read failed.");
         }
 
         if (!isnan(airHumidity)) {
@@ -129,30 +135,54 @@ void loop() {
             sensorBuffer.airHumiditySum += airHumidity;
             sensorBuffer.airHumidityCount++;
             updated = true;
+        } else {
+            Serial.println("Error: DHT humidity read failed.");
         }
 
-        if (updated) {
-            RealTimeData packet = current;
-            packet.isBatch = false;
-            sendESPNow(packet);
-        }
+        if (updated) dataChanged = true;
 
-        last_DHT_read = now;
+        last_DHT_read += DHT_READ_INTERVAL;
     }
 
-    // Float switch (continuous)
-    current.floatTriggered = float_switch_active();  // true = water low
+    // --- Float Switch + Buzzer ---
+    static bool lastFloatState = false;
+    bool floatState = float_switch_active();  // true = water low
 
+    if (floatState != lastFloatState) {
+        Serial.println(floatState ? "Water LOW - float switch triggered!" : "Water OK");
+        lastFloatState = floatState;
+    }
 
-    // Send 5-minute batch average
+    current.floatTriggered = floatState;
+
+    digitalWrite(LED_PIN, floatState ? HIGH : LOW);
+    digitalWrite(BUZZER_PIN, (floatState && (now / 500) % 2 == 0) ? HIGH : LOW);
+
+    // --- Real-time ESP-NOW Packet (every 1s max) ---
+    if (now - lastRealtimeSend >= 1000 && dataChanged) {
+        RealTimeData packet = current;
+        packet.isBatch = false;
+        if (!sendESPNow(packet)) {
+            Serial.println("Warning: Real-time ESP-NOW send failed.");
+        }
+        lastRealtimeSend = now;
+    }
+
+    // --- Batch data every 5 min ---
     if (now - last_batch_send >= 300000) {
         RealTimeData avg = computeAverages(sensorBuffer);
         avg.isBatch = true;
-        sendESPNow(avg);
+
+        if (!sendESPNow(avg)) {
+            Serial.println("Warning: Batch ESP-NOW send failed.");
+        }
+
         resetBatch(sensorBuffer);
         last_batch_send = now;
     }
-    
-    //lcd_display_update(current);
-    yield(); // Keep the system responsive
+
+    // --- LCD Display ---
+    lcd_display_update(current);
+
+    yield(); // Feed the watchdog
 }

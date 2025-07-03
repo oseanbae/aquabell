@@ -13,7 +13,7 @@ void dht_sensor_init() {
 
 // Clamp function to ensure values are within a specified range
 // This function ensures that the value is not less than min_val and not greater than max_val
-float clamp(float val, float minVal, float maxVal) {
+static float clamp(float val, float minVal, float maxVal) {
     if (val < minVal) return minVal;
     if (val > maxVal) return maxVal;
     return val;

@@ -15,7 +15,7 @@ void temp_sensor_init() {
 }
 
 // Clamp function to ensure values are within a specified range
-float clamp(float val, float minVal, float maxVal) {
+static float clamp(float val, float minVal, float maxVal) {
     if (val < minVal) return minVal;
     if (val > maxVal) return maxVal;
     return val;

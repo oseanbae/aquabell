@@ -111,9 +111,9 @@
 #define LCD_BACKLIGHT_ON      true
 #define LCD_BACKLIGHT_OFF     false
 #define DEBOUNCE_DELAY        50    // ms
-#define BUTTON_NEXT           25
-#define BUZZER_PIN            26
-#define LED_PIN               27
+#define BUTTON_NEXT           16 
+#define BUZZER_PIN            17
+#define LED_PIN               18
 #define TOTAL_PAGES           3
 
 // === Optional Logging =======
