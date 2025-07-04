@@ -36,8 +36,6 @@
 #define R1                      10000.0f
 #define R2                      20000.0f
 #define SENSOR_VOLTAGE_GAIN     ((R1 + R2) / R2)  // = 1.5
-#define MAX_ADC_SAFE_VOLTAGE    3.1f
-#define TURBIDITY_THRESHOLD     100.0f
 
 // NTU Mapping Constants (linear)
 #define NTU_SLOPE                -375.0f

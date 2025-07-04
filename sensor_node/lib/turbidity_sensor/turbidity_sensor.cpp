@@ -7,7 +7,7 @@ void turbidity_sensor_init() {
 }
 
 // === Read average ADC voltage (in volts) ===
-float readAverageVoltage() {
+float readTurbidityVoltage() {
     long sum = 0;
     for (int i = 0; i < NUM_SAMPLES; ++i) {
         sum += analogRead(TURBIDITY_PIN);
@@ -19,7 +19,7 @@ float readAverageVoltage() {
 
 // === Convert voltage to NTU ===
 float read_turbidity() {
-    float v_adc = readAverageVoltage();                // Voltage at ESP32 pin (0–3.0V)
+    float v_adc = readTurbidityVoltage();                // Voltage at ESP32 pin (0–3.0V)
     float v_sensor = v_adc * SENSOR_VOLTAGE_GAIN;      // Actual sensor output (0–4.5V)
     float ntu = NTU_OFFSET + NTU_SLOPE * v_sensor;     // Linear mapping
     return max(ntu, 0.0f);                              // Clamp negative values

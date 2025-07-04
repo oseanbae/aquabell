@@ -1,5 +1,6 @@
 #include "do_sensor.h"
 #include "sensor_config.h"
+#include "sensor_helper.h"
 #include <Arduino.h>
 
 // DO saturation lookup table (µg/L at 0–40°C)
@@ -18,14 +19,17 @@ void do_sensor_init() {
 
 // Reads the DO sensor voltage in mV
 float readDOVoltage() {
-  uint32_t sum = 0;
-  for (int i = 0; i < NUM_SAMPLES; i++) {
-    sum += analogRead(DO_SENSOR_PIN);
-    delay(5);
-  }
-  float raw = sum / float(NUM_SAMPLES);
-  return (raw * 3300.0) / 4095.0;  // Convert ADC to mV
+    float readings[DO_SENSOR_SAMPLES];
+
+    for (int i = 0; i < DO_SENSOR_SAMPLES; i++) {
+        int raw = analogRead(DO_SENSOR_PIN);
+        readings[i] = raw * 3300.0 / 4095.0;
+        delay(5);
+    }
+
+    return trimmed_mean(readings, DO_SENSOR_SAMPLES, 0.10);  // 10% trim
 }
+
 
 // Converts temperature in °C to DO saturation in µg/L using a linear interpolation
 float getDOSaturationUgL(float tempC) {
