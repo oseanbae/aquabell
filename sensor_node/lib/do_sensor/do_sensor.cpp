@@ -19,21 +19,18 @@ void do_sensor_init() {
 
 // Reads the DO sensor voltage in mV
 float readDOVoltage() {
-    float readings[DO_SENSOR_SAMPLES];
-
-    for (int i = 0; i < DO_SENSOR_SAMPLES; i++) {
-        int raw = analogRead(DO_SENSOR_PIN);
-        readings[i] = raw * 3300.0 / 4095.0;
-        delay(5);
-    }
-
-    return trimmed_mean(readings, DO_SENSOR_SAMPLES, 0.10);  // 10% trim
+  uint32_t sum = 0;
+  for (int i = 0; i < DO_SENSOR_SAMPLES; i++) {
+    sum += analogRead(DO_SENSOR_PIN);
+    delay(5);
+  }
+  float raw = sum / float(DO_SENSOR_SAMPLES);
+  return (raw * ADC_VOLTAGE_MV) / ADC_MAX;  // Convert ADC to mV
 }
-
 
 // Converts temperature in °C to DO saturation in µg/L using a linear interpolation
 float getDOSaturationUgL(float tempC) {
-  if (tempC <= 0) return DO_Table[0];
+  if (tempC <= 0) return DO_Table[0]; 
   if (tempC >= 40) return DO_Table[40];
   int t = int(tempC);
   float frac = tempC - t;

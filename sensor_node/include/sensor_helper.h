@@ -1,4 +1,4 @@
-float trimmed_mean(float* samples, int count, float trim_ratio) {
+static float trimmed_mean(float* samples, int count, float trim_ratio) {
     int trim = count * trim_ratio;
     if (trim * 2 >= count) return 0.0;  // prevent invalid trimming
 

@@ -59,9 +59,9 @@
 #define PH_SENSOR_SAMPLES     100
 #define PH_SAMPLE_DELAY_MS    20 // ms delay between samples
 #define NEUTRAL_PH            7.0       // neutral pH
-#define NEUTRAL_VOLTAGE_MV    1936.50     // << Measure actual voltage when in pH 7 buffer
+#define NEUTRAL_VOLTAGE_MV    1546.50     // << Measure actual voltage when in pH 7 buffer
 #define MV_PER_PH            -59.16    // Approximate Nernst slope at 25°C
-#define PH_READ_INTERVAL      30000    // ms
+#define PH_READ_INTERVAL      30000    // ms 
 
 #define PH_CRITICAL_LOW(pH)   ((pH) < 6.0)
 #define PH_CAUTION_LOW(pH)    ((pH) >= 6.0 && (pH) < 6.5)
