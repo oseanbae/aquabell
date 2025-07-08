@@ -120,6 +120,7 @@
 #define LED_PIN               18
 #define TOTAL_PAGES           3
 
+ #define BATCH_SEND_INTERVAL 300000UL // 5 minutes in milliseconds
 // === Optional Logging =======
 // #define ENABLE_LOGGING     // Uncomment to enable Serial output
 

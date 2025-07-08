@@ -1,17 +1,17 @@
 #pragma once
 #include <Arduino.h>
 #include <math.h>
+#include <stdint.h>
 
-
-struct RealTimeData {
-    float waterTemp = NAN;         // Water temperature in Celsius
-    float pH = NAN;                // pH level
-    float dissolvedOxygen = NAN;   // Dissolved oxygen level
-    float turbidityNTU = NAN;      // Turbidity in NTU
-    float airTemp = NAN;           // Air temperature in Celsius
-    float airHumidity = NAN;       // Air humidity in percentage
-    bool floatTriggered = false;
-    bool isBatch = false;          // Indicates if this data is part of a batch
+struct __attribute__((packed)) RealTimeData {
+    float waterTemp = NAN;
+    float pH = NAN;
+    float dissolvedOxygen = NAN;
+    float turbidityNTU = NAN;
+    float airTemp = NAN;
+    float airHumidity = NAN;
+    uint8_t floatTriggered = 0; // 0 = false, 1 = true
+    uint8_t isBatch = 0;        // 0 = false, 1 = true
 };
 
 struct BatchData {
@@ -32,5 +32,4 @@ struct BatchData {
 
     float airHumiditySum = 0;
     uint16_t  airHumidityCount = 0;
-
 };
