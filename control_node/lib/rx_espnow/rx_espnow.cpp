@@ -1,35 +1,30 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_now.h>
-#include "sensor_data.h"  // Same packed struct as sender
-
-extern "C" {
-#include "esp_wifi.h"    // For esp_wifi_set_ps
-}
-RealTimeData incomingData;
-volatile RealTimeData latestData;
-volatile bool dataAvailable = false;
-unsigned long lastDataReceived = 0;
-
-#include "rx_espnow.h"
 #include "sensor_data.h"
 
+
+extern "C" {
+#include "esp_wifi.h"
+}
+
+// === Shared sensor buffer state ===
 volatile RealTimeData latestData;
 volatile bool dataAvailable = false;
 unsigned long lastDataReceived = 0;
 
+// === ESP-NOW Callback ===
 void onDataRecv(const uint8_t *mac_addr, const uint8_t *incoming, int len) {
     if (len != sizeof(RealTimeData)) {
         Serial.printf("⚠️ Invalid data size: %d bytes (expected %d)\n", len, sizeof(RealTimeData));
         return;
     }
 
-    // ✅ Copy to shared struct
     memcpy((void*)&latestData, incoming, sizeof(RealTimeData));
     dataAvailable = true;
-    lastDataReceived = millis();  // ✅ Keep track of time received
+    lastDataReceived = millis();
 
-    // 📥 Debug print
+    // Debug
     Serial.print("📥 Received from: ");
     for (int i = 0; i < 6; i++) {
         Serial.printf("%02X", mac_addr[i]);
@@ -48,7 +43,7 @@ void onDataRecv(const uint8_t *mac_addr, const uint8_t *incoming, int len) {
     Serial.println("-------------------------------------------------");
 }
 
-
+// === ESP-NOW Setup ===
 void espnow_rx_init() {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect(true);

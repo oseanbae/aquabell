@@ -1,59 +1,80 @@
 #include <Arduino.h>
 #include <Wire.h>
-
+#include <LITTLEFS.h>
 #include "esp_task_wdt.h"
 #include "relay_control.h"
 #include "sensor_data.h"
 #include "rx_espnow.h"
-#include "rule_engine.h"  // contains apply_rules()
+#include "rule_engine.h"
 #include "RTClib.h"
 
 #define WDT_TIMEOUT_SECONDS 5
+
+RTC_DS3231 rtc;
 
 extern volatile RealTimeData latestData;
 extern volatile bool dataAvailable;
 extern unsigned long lastDataReceived;
 
-RTC_DS3231 rtc;
+void log_batch_to_file(const RealTimeData& data, DateTime timestamp) {
+    File file = LittleFS.open("/batch_log.txt", FILE_APPEND);
+    if (!file) {
+        Serial.println("❌ Failed to open log file");
+        return;
+    }
+
+    file.printf("{\"time\":\"%04d-%02d-%02dT%02d:%02d:%02d\",\"waterTemp\":%.2f,\"pH\":%.2f,\"DO\":%.2f,\"turbidity\":%.2f,\"airTemp\":%.2f,\"humidity\":%.2f,\"float\":%d}\n",
+        timestamp.year(), timestamp.month(), timestamp.day(),
+        timestamp.hour(), timestamp.minute(), timestamp.second(),
+        data.waterTemp, data.pH, data.dissolvedOxygen,
+        data.turbidityNTU, data.airTemp, data.airHumidity,
+        data.floatTriggered);
+
+    file.close();
+    Serial.println("📝 Batch snapshot saved.");
+}
 
 void setup() {
     Serial.begin(115200);
-    delay(1000);  // Allow serial to settle
+    delay(1000);
 
-    // Init RTC
     if (!rtc.begin()) {
         Serial.println("❌ RTC not found");
-        while (1);  // Stop everything
+        while (1);
     }
 
-    // Optional: Set RTC time (do once, comment after)
-    // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    if (!LittleFS.begin()) {
+        Serial.println("❌ Failed to mount LittleFS");
+        while (1);
+    }
 
-    // Init relay pins
     relay_control_init();
-
-    // Init ESP-NOW
     espnow_rx_init();
 
-    // Watchdog setup
-    esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true);  // Enable panic/reboot
-    esp_task_wdt_add(NULL);  // Add main loop to watchdog
+    esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true);
+    esp_task_wdt_add(NULL);
 
+    Serial.println("✅ LittleFS mounted");
     Serial.println("🚀 Control Node Ready");
 }
 
 void loop() {
-    esp_task_wdt_reset();  // Reset watchdog every loop
+    esp_task_wdt_reset();
 
     if (dataAvailable) {
         RealTimeData copy;
         memcpy(&copy, (const void*)&latestData, sizeof(RealTimeData));
-        apply_rules(copy);
         dataAvailable = false;
-    } else {
-        if (millis() - lastDataReceived > 10000) {
-            Serial.println("⚠️ No sensor data received in 10 seconds.");
+
+        apply_rules(copy);  // ✅ Your automation engine
+
+        if (copy.isBatch) {
+            DateTime now = rtc.now();
+            log_batch_to_file(copy, now);  // ✅ Write snapshot
         }
+    } else if (millis() - lastDataReceived > 10000) {
+        Serial.println("⚠️ No sensor data received in 10 seconds.");
     }
-    delay(1000);  // Rule engine runs every second
+
+    delay(1000);
 }
