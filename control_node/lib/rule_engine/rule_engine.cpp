@@ -83,7 +83,7 @@ void check_and_control_light(DateTime now) {
 }
 
 // ==== CENTRAL RULE DISPATCH ====
-void apply_rules(SensorData &current) {
+void apply_rules(const RealTimeData& current) {
     DateTime now = rtc.now();
     int currentMinutes = now.hour() * 60 + now.minute();
 
@@ -91,32 +91,3 @@ void apply_rules(SensorData &current) {
     check_and_control_pump(now, current.waterTemp);
     check_and_control_light(now);
 }
-
-// // ==== SETUP ====
-// void setup() {
-//     Serial.begin(115200);
-//     relay_control_init();
-//     rtc.begin();
-
-//     // Watchdog init
-//     esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true);  // Enable panic/reboot
-//     esp_task_wdt_add(NULL);  // Add main task to watchdog
-
-//     Serial.println("🚀 System initialized");
-// }
-
-// // Dummy sensor object (replace with actual sensor reading logic)
-// SensorData currentSensorData;
-
-// // ==== LOOP ====
-// void loop() {
-//     // TODO: Read sensors here (mocking for now)
-//     currentSensorData.airTemp = 27.5;
-//     currentSensorData.airHumidity = 78.0;
-//     currentSensorData.waterTemp = 29.0;
-
-//     apply_rules(currentSensorData);
-
-//     esp_task_wdt_reset();  // Reset watchdog
-//     delay(1000);           // Main loop sleep
-// }

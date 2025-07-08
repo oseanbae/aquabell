@@ -9,7 +9,7 @@ const int RELAYS[] = {
     PUMP_RELAY_PIN,
     AIR_RELAY_PIN,
     VALVE_RELAY_PIN
-};
+};  
 
 void relay_control_init() {
     for (int i = 0; i < sizeof(RELAYS) / sizeof(RELAYS[0]); i++) {
@@ -17,6 +17,7 @@ void relay_control_init() {
         digitalWrite(RELAYS[i], LOW); // Turn off all relays
     }
 }
+
 
 void setRelay(int relayPin, bool state) {digitalWrite(relayPin, state ? HIGH : LOW);}
 void control_fan(bool state)   { setRelay(RELAYS[0], state); }
