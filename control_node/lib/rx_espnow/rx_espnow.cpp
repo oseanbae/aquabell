@@ -43,11 +43,16 @@ void onDataRecv(const uint8_t *mac_addr, const uint8_t *incoming, int len) {
     Serial.println("-------------------------------------------------");
 }
 
-// === ESP-NOW Setup ===
-void espnow_rx_init() {
+void espnow_rx_init(int channel ) {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect(true);
     esp_wifi_set_ps(WIFI_PS_NONE);
+
+    delay(100); // Give Wi-Fi stack time to reset
+
+    esp_wifi_set_promiscuous(true);                  // Required to change channel when not connected
+    esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);  // Set to channel 1 (same as sender)
+    esp_wifi_set_promiscuous(false);
 
     if (esp_now_init() != ESP_OK) {
         Serial.println("❌ ESP-NOW init failed");

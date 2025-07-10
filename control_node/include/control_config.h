@@ -23,11 +23,13 @@
 #define PUMP_OFF_DURATION      45U   // minutes
 #define PUMP_CYCLE_DURATION    (PUMP_ON_DURATION + PUMP_OFF_DURATION)
 
-// === Grow Light Schedule ===
-#define LIGHT_MORNING_ON       330   // 5:30 AM
-#define LIGHT_MORNING_OFF      540   // 9:00 AM
-#define LIGHT_EVENING_ON       900   // 3:00 PM
-#define LIGHT_EVENING_OFF      1080  // 6:00 PM
+#define MINUTES(h, m) ((h) * 60 + (m))
+
+#define LIGHT_MORNING_ON   MINUTES(5, 30)   // 5:30 AM
+#define LIGHT_MORNING_OFF  MINUTES(9, 0)
+#define LIGHT_EVENING_ON   MINUTES(15, 0)
+#define LIGHT_EVENING_OFF  MINUTES(18, 0)
+
 
 // === RTC Pins ==============
 #define RTC_SDA               21
@@ -35,12 +37,10 @@
 #define RTC_ADDRESS           0x68
 
 //MQTT Broker Configuration
-#define MQTT_BROKER           "5f44c70b14974776848ac3161f348729.s1.eu.hivemq.cloud  "
+#define MQTT_BROKER           "5f44c70b14974776848ac3161f348729.s1.eu.hivemq.cloud"
 #define MQTT_PORT             8883
-#define MQTT_USER             "aquabell_client"
+#define MQTT_USER             "aquabell.hivemq"
 #define MQTT_PASSWORD         "aquabellhiveMQ413"
-#define SSL_CERTIFICATE "-----BEGIN CERTIFICATE-----\n...paste the full cert...\n-----END CERTIFICATE-----\n"
-
 
 // WIFI Configuration
 #define WIFI_SSID             "meow_5G"

@@ -8,4 +8,4 @@ extern volatile RealTimeData latestData;
 extern volatile bool dataAvailable;
 extern unsigned long lastDataReceived;
 
-void espnow_rx_init();
+void espnow_rx_init(int channel); // Default to channel 1
