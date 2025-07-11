@@ -1,5 +1,5 @@
 #include "Arduino.h"
-#include "sensor_config.h"
+#include "config.h"
 
 void turbidity_sensor_init() {
     pinMode(TURBIDITY_PIN, INPUT);

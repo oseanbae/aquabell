@@ -1,5 +1,5 @@
 // #include <Arduino.h>
-// #include "sensor_config.h"
+// #include "config.h"
 // #include "lcd_display.h"
 // #include "sensor_data.h"
 
@@ -32,7 +32,7 @@
 
 
 #include <Arduino.h>
-#include "sensor_config.h"
+#include "config.h"
 
 // Sensor libraries
 #include "temp_sensor.h"
@@ -42,12 +42,13 @@
 #include "dht_sensor.h"
 #include "float_switch.h"
 #include "sensor_data.h"
+#include "rule_engine.h"
 
 // Display libraries
 #include "lcd_display.h"
 
-#include "tx_espnow.h"
-#include "buffer.h"
+// #include "tx_espnow.h"
+// #include "buffer.h"
 
 RealTimeData current; // Use RealTimeData for real-time updates
 BatchData sensorBuffer;
@@ -67,7 +68,7 @@ void setup() {
     float_switch_init();
 
     lcd_init();
-    espnow_init();
+    //espnow_init();
 
     Serial.println("System ready.");
 }
@@ -183,7 +184,15 @@ void loop() {
         lastFloatDebounce = now;
     }
 
-    // --- Real-time ESP-NOW send ---
+    // --- LCD Display ---
+    lcd_display_update(current);
+    apply_rules(current);
+    yield(); // Feed the watchdog
+    
+}
+
+
+// --- Real-time ESP-NOW send ---
     // bool anySensorUpdated = waterTempUpdated || phUpdated || doUpdated || turbidityUpdated || dhtUpdated;
 
     // if (anySensorUpdated && (now - lastRealtimeSend >= 1000)) {
@@ -231,9 +240,3 @@ void loop() {
     //     resetBatch(sensorBuffer);
     //     last_batch_send = now;
     // }
-
-    // --- LCD Display ---
-    lcd_display_update(current);
-
-    yield(); // Feed the watchdog
-}

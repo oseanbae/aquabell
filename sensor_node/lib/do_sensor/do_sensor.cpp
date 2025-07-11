@@ -1,5 +1,5 @@
 #include "do_sensor.h"
-#include "sensor_config.h"
+#include "config.h"
 #include "sensor_helper.h"
 #include <Arduino.h>
 

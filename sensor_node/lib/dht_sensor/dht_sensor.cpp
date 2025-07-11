@@ -1,6 +1,6 @@
 #include "dht_sensor.h"
 #include "DHT.h"
-#include "sensor_config.h"
+#include "config.h"
 #include <Arduino.h>
 
 // DHT sensor configuration

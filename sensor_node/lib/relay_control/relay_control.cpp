@@ -2,7 +2,7 @@
 #include "control_config.h"
 
 
-// Use the pin macros from sensor_config.h to create the relay array
+// Use the pin macros from config.h to create the relay array
 const int RELAYS[] = {
     FAN_RELAY_PIN,
     LIGHT_RELAY_PIN,

@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "sensor_config.h"
+#include "config.h"
 
 // --- Init ---
 void ph_sensor_init() {

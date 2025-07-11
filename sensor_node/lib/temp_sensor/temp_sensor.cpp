@@ -1,6 +1,6 @@
 #include "DallasTemperature.h"
 #include "OneWire.h"
-#include "sensor_config.h"
+#include "config.h"
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensor(&oneWire);

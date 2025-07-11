@@ -1,5 +1,5 @@
 #include "Arduino.h"
-#include "sensor_config.h"  // defines FLOAT_SWITCH_PIN
+#include "config.h"  // defines FLOAT_SWITCH_PIN
 #include "float_switch.h"
 
 // Debounce state tracking

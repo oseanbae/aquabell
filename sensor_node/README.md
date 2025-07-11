@@ -40,7 +40,7 @@ This ESP32-based firmware powers the **Sensor Node** in the Aquabell Smart Aquap
 | LED              | `LED_PIN`          |
 | Next Button      | `BUTTON_NEXT`      |
 
-> See `sensor_config.h` for full pin mapping and read intervals.
+> See `config.h` for full pin mapping and read intervals.
 
 ---
 
@@ -50,7 +50,7 @@ This ESP32-based firmware powers the **Sensor Node** in the Aquabell Smart Aquap
 📁 src/
 │
 ├── main.cpp                # Main logic
-├── sensor_config.h         # Pins, intervals, constants
+├── config.h         # Pins, intervals, constants
 │
 ├── sensor_data.h           # RealTimeData + BatchData structs
 ├── buffer.cpp              # Averaging + reset logic
