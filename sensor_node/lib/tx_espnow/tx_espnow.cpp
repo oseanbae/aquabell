@@ -1,6 +1,12 @@
 #include "tx_espnow.h"
+#include <WiFi.h>
+#include <esp_now.h>
 
-uint8_t controlMAC[6] = { 0x24, 0x6F, 0x28, 0xAB, 0xCD, 0xEF }; // <-- Update to match receiver
+extern "C" {
+#include "esp_wifi.h"
+}
+
+uint8_t controlMAC[6] = { 0xEC, 0xE3, 0x34, 0x79, 0xD8, 0x84 };
 
 static bool peerAdded = false;
 static bool sendSuccess = false;
@@ -18,8 +24,8 @@ void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 
 void espnow_init() {
     WiFi.mode(WIFI_STA);
-    WiFi.disconnect(); // Disconnect to avoid WiFi interference
-
+    WiFi.disconnect(true); // Disconnect to avoid WiFi interference
+    esp_wifi_set_ps(WIFI_PS_NONE); // Disable WiFi power save mode  
     if (esp_now_init() != ESP_OK) {
         Serial.println("❌ ESP-NOW init failed");
         return;
@@ -29,7 +35,7 @@ void espnow_init() {
 
     esp_now_peer_info_t peerInfo = {};
     memcpy(peerInfo.peer_addr, controlMAC, 6);
-    peerInfo.channel = 0;
+    peerInfo.channel = 10;
     peerInfo.encrypt = false;
 
     if (!esp_now_is_peer_exist(controlMAC)) {

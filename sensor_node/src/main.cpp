@@ -1,3 +1,36 @@
+// #include <Arduino.h>
+// #include "sensor_config.h"
+// #include "lcd_display.h"
+// #include "sensor_data.h"
+
+// RealTimeData mockData;
+
+// void setup() {
+//     Serial.begin(115200);
+//     delay(1000);
+
+//     lcd_init();
+
+//     // Assign mock values manually
+//     mockData.waterTemp = 26.5;
+//     mockData.pH = 7.2;
+//     mockData.dissolvedOxygen = 6.8;
+//     mockData.turbidityNTU = 45.0;
+//     mockData.airTemp = 24.3;
+//     mockData.airHumidity = 58.0;
+//     mockData.floatTriggered = 0;
+//     mockData.isBatch = 0;
+
+//     Serial.println("LCD Display Test Initialized.");
+// }
+
+
+// void loop() {
+//     lcd_display_update(mockData);
+//     delay(200);  // Let loop breathe, simulate frame refresh
+// }
+
+
 #include <Arduino.h>
 #include "sensor_config.h"
 
@@ -19,8 +52,6 @@
 RealTimeData current; // Use RealTimeData for real-time updates
 BatchData sensorBuffer;
 
-unsigned long last_batch_send = 0; // Time to send batch data
-
 void setup() {
     Serial.begin(115200);
     delay(2000); // Let Serial and sensors stabilize
@@ -35,8 +66,8 @@ void setup() {
     dht_sensor_init();
     float_switch_init();
 
-    lcd_init(); // Initialize the LCD display
-    espnow_init(); // Initialize ESP-NOW for data transmission
+    lcd_init();
+    espnow_init();
 
     Serial.println("System ready.");
 }
@@ -149,58 +180,57 @@ void loop() {
             Serial.println(floatState ? "Water LOW" : "Water OK");
         }
         digitalWrite(LED_PIN, floatState ? HIGH : LOW);
-        digitalWrite(BUZZER_PIN, (floatState && (now / 500) % 2 == 0) ? HIGH : LOW);
         lastFloatDebounce = now;
     }
 
     // --- Real-time ESP-NOW send ---
-    bool anySensorUpdated = waterTempUpdated || phUpdated || doUpdated || turbidityUpdated || dhtUpdated;
+    // bool anySensorUpdated = waterTempUpdated || phUpdated || doUpdated || turbidityUpdated || dhtUpdated;
 
-    if (anySensorUpdated && (now - lastRealtimeSend >= 1000)) {
-        current.isBatch = false;
+    // if (anySensorUpdated && (now - lastRealtimeSend >= 1000)) {
+    //     current.isBatch = false;
 
-        Serial.print("📶 Real-time send triggered by: ");
-        if (waterTempUpdated) Serial.print("[WaterTemp] ");
-        if (phUpdated) Serial.print("[pH] ");
-        if (doUpdated) Serial.print("[DO] ");
-        if (turbidityUpdated) Serial.print("[Turbidity] ");
-        if (dhtUpdated) Serial.print("[DHT] ");
-        Serial.println();
+    //     Serial.print("📶 Real-time send triggered by: ");
+    //     if (waterTempUpdated) Serial.print("[WaterTemp] ");
+    //     if (phUpdated) Serial.print("[pH] ");
+    //     if (doUpdated) Serial.print("[DO] ");
+    //     if (turbidityUpdated) Serial.print("[Turbidity] ");
+    //     if (dhtUpdated) Serial.print("[DHT] ");
+    //     Serial.println();
 
-        Serial.println("===Sending Sensor Values:===");
-        Serial.printf("Water Temp      : %.2f °C\n", current.waterTemp);
-        Serial.printf("pH Level        : %.2f\n", current.pH);
-        Serial.printf("Diss. Oxygen    : %.2f mg/L\n", current.dissolvedOxygen);
-        Serial.printf("Turbidity       : %.2f NTU\n", current.turbidityNTU);
-        Serial.printf("Air Temp        : %.2f °C\n", current.airTemp);
-        Serial.printf("Air Humidity    : %.2f %%\n", current.airHumidity);
-        Serial.printf("Float Triggered : %s\n", current.floatTriggered ? "YES" : "NO");
+    //     Serial.println("===Sending Sensor Values:===");
+    //     Serial.printf("Water Temp      : %.2f °C\n", current.waterTemp);
+    //     Serial.printf("pH Level        : %.2f\n", current.pH);
+    //     Serial.printf("Diss. Oxygen    : %.2f mg/L\n", current.dissolvedOxygen);
+    //     Serial.printf("Turbidity       : %.2f NTU\n", current.turbidityNTU);
+    //     Serial.printf("Air Temp        : %.2f °C\n", current.airTemp);
+    //     Serial.printf("Air Humidity    : %.2f %%\n", current.airHumidity);
+    //     Serial.printf("Float Triggered : %s\n", current.floatTriggered ? "YES" : "NO");
 
-        if (!sendESPNow(current)) {
-            Serial.println("❌ ESP-NOW real-time send failed.");
-        } else {
-            Serial.println("✅ ESP-NOW real-time send successful.");
-        }
+    //     if (!sendESPNow(current)) {
+    //         Serial.println("❌ ESP-NOW real-time send failed.");
+    //     } else {
+    //         Serial.println("✅ ESP-NOW real-time send successful.");
+    //     }
 
-        lastRealtimeSend = now;
-    }
+    //     lastRealtimeSend = now;
+    // }
 
 
-    // --- Batch ESP-NOW send every 5 minutes ---
-    if (now - last_batch_send >= BATCH_SEND_INTERVAL) {
-        RealTimeData avg = computeAverages(sensorBuffer);
-        avg.isBatch = true;
-        avg.floatTriggered = current.floatTriggered;
+    // // --- Batch ESP-NOW send every 5 minutes ---
+    // if (now - last_batch_send >= BATCH_SEND_INTERVAL) {
+    //     RealTimeData avg = computeAverages(sensorBuffer);
+    //     avg.isBatch = true;
+    //     avg.floatTriggered = current.floatTriggered;
 
-        if (!sendESPNow(avg)) {
-            Serial.println("⚠️ ESP-NOW batch send failed.");
-        } else {
-            Serial.println("📤 Batch data sent.");
-        }
+    //     if (!sendESPNow(avg)) {
+    //         Serial.println("⚠️ ESP-NOW batch send failed.");
+    //     } else {
+    //         Serial.println("📤 Batch data sent.");
+    //     }
 
-        resetBatch(sensorBuffer);
-        last_batch_send = now;
-    }
+    //     resetBatch(sensorBuffer);
+    //     last_batch_send = now;
+    // }
 
     // --- LCD Display ---
     lcd_display_update(current);

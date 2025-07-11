@@ -28,30 +28,26 @@ void lcd_init() {
 
 // --- CORE DISPLAY FUNCTION ---
 void lcd_display(const RealTimeData& data, int page) {
-    lcd.clear();
+    lcd.clear();    
 
     switch (page) {
         case 0:
             lcd.setCursor(0, 0);
-            lcd.print("Air: " + String(data.airTemp) + "C");
+            lcd.print("Air: " + String(data.airTemp) + " C");
             lcd.setCursor(0, 1);
             lcd.print("Hum: " + String(data.airHumidity) + "%");
             break;
         case 1:
             lcd.setCursor(0, 0);
-            lcd.print("Water: " + String(data.waterTemp) + "C");
-            lcd.print(" " + String(TEMP_STATUS_LABEL(data.waterTemp)));
+            lcd.print("Water: " + String(data.waterTemp) + " C");
             lcd.setCursor(0, 1);
             lcd.print("pH: " + String(data.pH));
-            lcd.print(" " + String(PH_STATUS_LABEL(data.pH)));
             break;
         case 2:
             lcd.setCursor(0, 0);
-            lcd.print("DO: " + String(data.dissolvedOxygen) + "mg/L");
-            lcd.print(" " + String(DO_STATUS_LABEL(data.dissolvedOxygen)));
+            lcd.print("DO: " + String(data.dissolvedOxygen) + " mg/L");
             lcd.setCursor(0, 1);
-            lcd.print("Turb: " + String(data.turbidityNTU) + "NTU");
-            lcd.print(" " + String(NTU_STATUS_LABEL(data.turbidityNTU)));
+            lcd.print("Turb: " + String(data.turbidityNTU) + " NTU");
             break;
     }
 }
@@ -74,9 +70,7 @@ void lcd_display_update(const RealTimeData& RealTimeData) {
 
         lcd_display(RealTimeData, currentPage);  // Show new page
 
-        digitalWrite(BUZZER_PIN, HIGH);
-        delay(100);
-        digitalWrite(BUZZER_PIN, LOW);
+        tone(BUZZER_PIN, 3000, 150); 
 
         return;  // Done for this frame
     }
