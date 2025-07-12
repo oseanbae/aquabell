@@ -90,9 +90,9 @@
 #define MINUTES(h, m) ((h) * 60 + (m))
 
 #define LIGHT_MORNING_ON   MINUTES(5, 30)   // 5:30 AM
-#define LIGHT_MORNING_OFF  MINUTES(9, 0)
-#define LIGHT_EVENING_ON   MINUTES(15, 0)
-#define LIGHT_EVENING_OFF  MINUTES(18, 0)
+#define LIGHT_MORNING_OFF  MINUTES(9, 0)    // 9:00 AM
+#define LIGHT_EVENING_ON   MINUTES(15, 0)   // 3:00 PM
+#define LIGHT_EVENING_OFF  MINUTES(18, 0)   // 6:00 PM
 
 
 // === RTC Pins ==============
@@ -101,12 +101,18 @@
 #define RTC_ADDRESS           0x68
 
 //MQTT Broker Configuration
-#define MQTT_BROKER           "5f44c70b14974776848ac3161f348729.s1.eu.hivemq.cloud"
-#define MQTT_PORT             8883
-#define MQTT_USER             "aquabell_client"
-#define MQTT_PASSWORD         "MQTT_aquabell413"
+#define MQTT_BROKER "broker.hivemq.com"
+#define MQTT_PORT             1883
 
-// WIFI Configuration
-#define WIFI_SSID             "Library_GuestNetwork"
-#define WIFI_PASSWORD         "Sipuegg#19_"
+//=== WIFI Configuration ===
+//JAY'S WIFI
+#define WIFI_SSID             "Tung Tung Tung Sahur"
+#define WIFI_PASSWORD         "SkibidiToilet_00"
 
+//SHIELA'S WIFI
+// #define WIFI_SSID          "Library_GuesntNetwork"
+// #define WIFI_PASSWORD      "Sipuegg#19_"
+
+//JP'S WIFI
+#define WIFI_SSID   "meow"
+#define WIFI_PASSWORD "helloworld2025"
