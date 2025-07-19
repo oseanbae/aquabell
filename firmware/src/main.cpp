@@ -121,3 +121,35 @@ RealTimeData readMockSensors(unsigned long now) {
 
     return mockData;
 }
+
+void setup() {
+    Serial.begin(115200);
+    delay(2000);
+
+    analogReadResolution(12);
+    analogSetAttenuation(ADC_11db);
+
+    temp_sensor_init();
+    ph_sensor_init();
+    do_sensor_init();
+    turbidity_sensor_init();
+    dht_sensor_init();
+    float_switch_init();
+
+    lcd_init();
+    Serial.println("System ready.");
+}
+
+void loop() {
+
+    unsigned long now = millis();
+    static unsigned long lastSentTime = 0;
+    current = USE_MOCK_DATA ? readMockSensors(now) : readSensors(now);
+
+    // Optional: Uncomment if you want rules & LCD
+    // lcd_display_update(current);
+    // apply_rules(current);
+
+    yield(); // Feed watchdog
+}
+
