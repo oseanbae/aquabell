@@ -100,14 +100,10 @@
 #define RTC_SCL               22
 #define RTC_ADDRESS           0x68
 
-//MQTT Broker Configuration
-#define MQTT_BROKER "broker.hivemq.com"
-#define MQTT_PORT             1883
-
 //=== WIFI Configuration ===
 //JAY'S WIFI
-#define WIFI_SSID             "Tung Tung Tung Sahur"
-#define WIFI_PASSWORD         "SkibidiToilet_00"
+// #define WIFI_SSID             "Tung Tung Tung Sahur"
+// #define WIFI_PASSWORD         "SkibidiToilet_00"
 
 //SHIELA'S WIFI
 // #define WIFI_SSID          "Library_GuesntNetwork"

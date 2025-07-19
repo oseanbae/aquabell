@@ -10,9 +10,6 @@
 #include "float_switch.h"
 #include "sensor_data.h"
 #include "rule_engine.h"
-#include "hivemq.h"
-#include "mqtt_util.h"
-#include "mqtt_topics.h"
 // Display libraries
 
 
@@ -37,14 +34,10 @@ void setup() {
     float_switch_init();
 
     lcd_init();
-    setup_wifi();
-    setup_mqtt();
-
     Serial.println("System ready.");
 }
 
 void loop() {
-    mqtt_loop();
 
     unsigned long now = millis();
     static unsigned long lastSentTime = 0;
@@ -53,17 +46,6 @@ void loop() {
     // Optional: Uncomment if you want rules & LCD
     // lcd_display_update(current);
     // apply_rules(current);
-
-    bool changed = true; // Always publish in mock mode or add delta checks here
-
-    if (changed || (now - lastSentTime >= 10000)) {
-        String payload = sensorDataToJson(current);
-        Serial.println(payload);
-        mqtt_publish("aquabell/sensors", payload);
-
-        lastSent = current;
-        lastSentTime = now;
-    }
 
     yield(); // Feed watchdog
 }

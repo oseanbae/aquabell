@@ -82,6 +82,16 @@ void check_and_control_light(DateTime now) {
     control_light(shouldBeOn);
 }
 
+void trigger_alert_if_needed(float turbidity, float waterTemp, float pH, float DOmgL) {
+    bool alert = false;
+    if (turbidity > 800.0 || waterTemp > 32.0 || pH < 5.5 || pH > 8.5 || DOmgL < 3.0) {
+        alert = true;
+    }
+    tone(BUZZER_PIN, 1000, 50000);
+    if (alert) Serial.println("🚨 ALERT: One or more sensor readings out of range");
+}
+
+
 // ==== CENTRAL RULE DISPATCH ====
 void apply_rules(const RealTimeData& current) {
     DateTime now = rtc.now();
@@ -90,4 +100,12 @@ void apply_rules(const RealTimeData& current) {
     check_climate_and_control_fan(current.airTemp, current.airHumidity, currentMinutes);
     check_and_control_pump(now, current.waterTemp);
     check_and_control_light(now);
+
+    trigger_alert_if_needed(
+        current.turbidityNTU,
+        current.waterTemp,
+        current.pH,
+        current.dissolvedOxygen
+    );
 }
+
