@@ -1,4 +1,15 @@
 # PlatformIO
-firmware/.pio/
-firmware/.vscode/
-firmware/build/
+.pio
+.vscode
+*.pyc
+__pycache__/
+*.elf
+*.bin
+*.hex
+*.map
+*.exe
+*.dSYM/
+
+# OS
+.DS_Store
+Thumbs.db
