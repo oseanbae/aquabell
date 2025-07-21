@@ -539,7 +539,7 @@
                 ""
             ],
             "cStandard": "gnu99",
-            "cppStandard": "gnu++11",
+            "cppStandard": "gnu++17",
             "compilerPath": "C:/Users/VivoBook 15/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-gcc.exe",
             "compilerArgs": [
                 "-mlongcalls",
