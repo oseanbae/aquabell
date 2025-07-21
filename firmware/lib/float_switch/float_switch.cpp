@@ -10,10 +10,7 @@ const unsigned long debounceDelay = 50; // milliseconds
 
 void float_switch_init() {
     pinMode(FLOAT_SWITCH_PIN, INPUT_PULLUP); // Assumes float switch pulls LOW when water is low
-    pinMode(LED_PIN, OUTPUT);
-    pinMode(BUZZER_PIN, OUTPUT);
-
-    digitalWrite(LED_PIN, LOW);     // start off
+    pinMode(BUZZER_PIN, OUTPUT);    // start off
     digitalWrite(BUZZER_PIN, LOW);
 }
 

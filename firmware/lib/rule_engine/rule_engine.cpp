@@ -1,106 +1,144 @@
 #include <Arduino.h>
 #include "config.h"
-#include "RTClib.h"
-#include "relay_control.h"
 #include "sensor_data.h"
-#include "esp_task_wdt.h"  // ESP32 Watchdog
+#include "relay_control.h"
+#include "float_switch.h"
+#include "RTClib.h"
 
-#define WDT_TIMEOUT_SECONDS 5
+// === Constants ===
+#define BUZZER_ALERT_FREQ       1000
+#define BUZZER_ALERT_DURATION   1000
+#define BUZZER_FLOAT_FREQ       1200
+#define BUZZER_FLOAT_DURATION   500
+#define BUZZER_ACTUATOR_FREQ    2000
+#define BUZZER_ACTUATOR_DURATION 150
 
-RTC_DS3231 rtc;
+#define PUMP_OVERRIDE_DURATION  300000UL
+#define PUMP_OVERRIDE_COOLDOWN   60000UL
 
-bool fanActive = false;
-unsigned long fanOnSince = 0;
+// === State Tracking ===
+static bool fanActive = false;
+static unsigned long fanOnSince = 0;
+static bool overrideActive = false;
+static unsigned long lastOverrideTime = 0;
+static unsigned long lastPumpToggle = 0;
+static bool pumpScheduledOn = false;
 
-inline unsigned long millis_elapsed(unsigned long current, unsigned long since) {
-    return (unsigned long)(current - since); // Handles millis rollover
+// === Helpers ===
+inline unsigned long millis_elapsed(unsigned long now, unsigned long since) {
+    return (unsigned long)(now - since);
 }
 
-// ==== FAN LOGIC WITH HYSTERESIS + SAFEGUARDS ====
-void check_climate_and_control_fan(float airTemp, float humidity, int currentMinutes) {
-    const int MONITOR_START = 480;   // 8:00 AM
-    const int MONITOR_END   = 1020;  // 5:00 PM
+void playTone(int freq, int duration) {
+    tone(BUZZER_PIN, freq, duration);
+}
 
-    bool inMonitoringWindow = currentMinutes >= MONITOR_START && currentMinutes <= MONITOR_END;
+// === FAN LOGIC ===
+void check_climate_and_control_fan(float airTemp, float humidity, int currentMinutes) {
+    const int MONITOR_START = 480;  // 08:00
+    const int MONITOR_END   = 1020; // 17:00
+
+    bool inWindow = currentMinutes >= MONITOR_START && currentMinutes <= MONITOR_END;
     unsigned long now = millis();
 
-    bool shouldTurnOn = inMonitoringWindow &&
-                        !fanActive &&
-                        ((airTemp >= TEMP_ON_THRESHOLD && humidity > HUMIDITY_ON_THRESHOLD) ||
-                         airTemp >= TEMP_EMERGENCY);
+    bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;
+    bool humHigh = humidity > HUMIDITY_ON_THRESHOLD;
+    bool emergency = airTemp >= TEMP_EMERGENCY;
 
-    bool shouldTurnOff = fanActive &&
-                         ((airTemp < TEMP_OFF_THRESHOLD && humidity < HUMIDITY_OFF_THRESHOLD) ||
-                          millis_elapsed(now, fanOnSince) >= FAN_MAX_CONTINUOUS_MS);
+    bool shouldTurnOn = inWindow && !fanActive && ((tempHigh && humHigh) || emergency);
+    bool shouldTurnOff = fanActive && (
+        (airTemp < TEMP_OFF_THRESHOLD && humidity < HUMIDITY_OFF_THRESHOLD) ||
+        millis_elapsed(now, fanOnSince) >= FAN_MAX_CONTINUOUS_MS
+    );
 
     if (shouldTurnOn) {
         fanActive = true;
         fanOnSince = now;
         control_fan(true);
+        playTone(BUZZER_ACTUATOR_FREQ, BUZZER_ACTUATOR_DURATION);
         Serial.println("🌀 Fan ON — Triggered by climate or emergency");
-    } 
-    else if (shouldTurnOff && millis_elapsed(now, fanOnSince) >= FAN_MINUTE_RUNTIME) {
+    } else if (shouldTurnOff && millis_elapsed(now, fanOnSince) >= FAN_MINUTE_RUNTIME) {
         fanActive = false;
         control_fan(false);
+        playTone(BUZZER_ACTUATOR_FREQ, BUZZER_ACTUATOR_DURATION);
         Serial.println("✅ Fan OFF — Conditions normal or max runtime exceeded");
     }
 }
 
-// ==== PUMP LOGIC WITH SAFE OVERRIDE ====
-void check_and_control_pump(DateTime now, float waterTemp) {
-    static unsigned long lastOverrideTime = 0;
-    static bool overrideActive = false;
+// === PUMP LOGIC WITH FLOAT SWITCH ===
+void check_and_control_pump(float waterTemp, bool waterLevelLow) {
+    unsigned long now = millis();
 
-    int totalMinutes = now.hour() * 60 + now.minute();
-    bool inScheduledOn = (totalMinutes % PUMP_CYCLE_DURATION) < PUMP_ON_DURATION;
-
-    unsigned long currentMillis = millis();
-
-    if  (waterTemp > 30.0 && !overrideActive && millis_elapsed(currentMillis, lastOverrideTime) > 60000) {
+    // === Handle High Temp Override ===
+    if (waterTemp > 30.0 && !overrideActive && millis_elapsed(now, lastOverrideTime) > PUMP_OVERRIDE_COOLDOWN) {
         overrideActive = true;
-        lastOverrideTime = currentMillis;
-        Serial.println("⚠️ Temp > 30°C — forcing pump ON for cooling");
+        lastOverrideTime = now;
+        Serial.println("⚠️ Pump override ON — water > 30°C");
+        playTone(BUZZER_ACTUATOR_FREQ, BUZZER_ACTUATOR_DURATION);
     }
-
-    const unsigned long OVERRIDE_DURATION = 300000;  // 5 mins
-
-    if (overrideActive && millis_elapsed(currentMillis, lastOverrideTime) >= OVERRIDE_DURATION) {
+    if (overrideActive && millis_elapsed(now, lastOverrideTime) >= PUMP_OVERRIDE_DURATION) {
         overrideActive = false;
-        Serial.println("✅ Pump override complete");
+        Serial.println("✅ Pump override OFF — duration complete");
+        playTone(BUZZER_ACTUATOR_FREQ, BUZZER_ACTUATOR_DURATION);
     }
 
-    control_pump(inScheduledOn || overrideActive);
+    // === Float switch safety ===
+    if (waterLevelLow) {
+        
+        control_pump(false);             // Always force OFF if water is low
+        control_valve(true);            // Start refill valve
+        return;
+    }
+
+    control_valve(false);               // Stop refill if water level is OK
+
+    // === Normal Pump Cycle ===
+    if (overrideActive) {
+        control_pump(true);
+        return;
+    }
+
+    if (!pumpScheduledOn && millis_elapsed(now, lastPumpToggle) >= PUMP_OFF_DURATION) {
+        pumpScheduledOn = true;
+        lastPumpToggle = now;
+        control_pump(true);
+    } else if (pumpScheduledOn && millis_elapsed(now, lastPumpToggle) >= PUMP_ON_DURATION) {
+        pumpScheduledOn = false;
+        lastPumpToggle = now;
+        control_pump(false);
+    }
 }
 
-// ==== LIGHT WINDOW CONTROL ====
+// === LIGHT LOGIC ===
 void check_and_control_light(DateTime now) {
-    int currentMinutes = now.hour() * 60 + now.minute();
-
-    bool shouldBeOn = (currentMinutes >= LIGHT_MORNING_ON && currentMinutes < LIGHT_MORNING_OFF) ||
-                      (currentMinutes >= LIGHT_EVENING_ON && currentMinutes < LIGHT_EVENING_OFF);
-
-    control_light(shouldBeOn);
+    int mins = now.hour() * 60 + now.minute();
+    bool on = (mins >= LIGHT_MORNING_ON && mins < LIGHT_MORNING_OFF) ||
+              (mins >= LIGHT_EVENING_ON && mins < LIGHT_EVENING_OFF);
+    control_light(on);
 }
 
+// === BUZZER ALERT ===
 void trigger_alert_if_needed(float turbidity, float waterTemp, float pH, float DOmgL) {
-    bool alert = false;
-    if (turbidity > 800.0 || waterTemp > 32.0 || pH < 5.5 || pH > 8.5 || DOmgL < 3.0) {
-        alert = true;
+    bool alert = turbidity > 800.0 || waterTemp > 32.0 || pH < 5.5 || pH > 8.5 || DOmgL < 3.0;
+    if (alert) {
+        playTone(BUZZER_ALERT_FREQ, BUZZER_ALERT_DURATION);
+        Serial.println("🚨 ALERT: Sensor reading out of safe range");
     }
-    tone(BUZZER_PIN, 1000, 50000);
-    if (alert) Serial.println("🚨 ALERT: One or more sensor readings out of range");
 }
 
-
-// ==== CENTRAL RULE DISPATCH ====
-void apply_rules(const RealTimeData& current) {
-    DateTime now = rtc.now();
+// === MAIN DISPATCH ===
+void apply_rules(const RealTimeData& current, const DateTime& now) {
     int currentMinutes = now.hour() * 60 + now.minute();
+    bool waterLevelLow = is_float_switch_triggered();
+
+    if (waterLevelLow) {
+        Serial.println("💧 Float switch triggered — low water level");
+        playTone(BUZZER_FLOAT_FREQ, BUZZER_FLOAT_DURATION);
+    }
 
     check_climate_and_control_fan(current.airTemp, current.airHumidity, currentMinutes);
-    check_and_control_pump(now, current.waterTemp);
+    check_and_control_pump(current.waterTemp, waterLevelLow);
     check_and_control_light(now);
-
     trigger_alert_if_needed(
         current.turbidityNTU,
         current.waterTemp,
@@ -108,4 +146,3 @@ void apply_rules(const RealTimeData& current) {
         current.dissolvedOxygen
     );
 }
-

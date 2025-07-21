@@ -53,7 +53,6 @@
 #define DEBOUNCE_DELAY        50    // ms
 #define BUTTON_NEXT           16 
 #define BUZZER_PIN            17
-#define LED_PIN               18
 #define TOTAL_PAGES           3
 
 // === SENSOR READ INTERVALS ===
@@ -62,7 +61,7 @@
 #define TURBIDITY_READ_INTERVAL 10000  // ms
 #define PH_READ_INTERVAL      30000  // ms
 #define DO_READ_INTERVAL      15000  // ms
-#define BATCH_SEND_INTERVAL 300000UL // 5 minutes in milliseconds
+#define FLOAT_READ_INTERVAL       5000  // Avoid high-frequency polling
 
 // === Relay Control ==========
 #define FAN_RELAY_PIN         19
@@ -103,12 +102,12 @@
 //=== WIFI Configuration ===
 //JAY'S WIFI
 // #define WIFI_SSID             "Tung Tung Tung Sahur"
-// #define WIFI_PASSWORD         "SkibidiToilet_00"
+// #define WIFI_PASS         "SkibidiToilet_00"
 
 //SHIELA'S WIFI
 // #define WIFI_SSID          "Library_GuesntNetwork"
-// #define WIFI_PASSWORD      "Sipuegg#19_"
+// #define WIFI_PASS      "Sipuegg#19_"
 
 //JP'S WIFI
 #define WIFI_SSID   "meow"
-#define WIFI_PASSWORD "helloworld2025"
+#define WIFI_PASS   "helloworld2025"

@@ -1,11 +1,11 @@
-#pragma once 
-#include <Arduino.h>
+#pragma once
 
-struct ActuatorStates {
-    bool fan;
-    bool pump;
-    bool light;
-    bool valve;
-} actuatorState;
+struct ActuatorState {
+  bool fan = false;
+  bool pump = false;
+  bool air = false;
+  bool light = false;
+  bool valve = false;
+};
 
-extern ActuatorStates actuatorState;
+extern ActuatorState actuators;

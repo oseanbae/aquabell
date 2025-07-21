@@ -17,10 +17,7 @@ void lcd_init() {
     lcd.clear();
 
     pinMode(BUTTON_NEXT, INPUT_PULLUP);
-    pinMode(LED_PIN, OUTPUT);
     pinMode(BUZZER_PIN, OUTPUT);
-
-    digitalWrite(LED_PIN, LOW);
     digitalWrite(BUZZER_PIN, LOW);
 
     lastInteractionTime = millis();
