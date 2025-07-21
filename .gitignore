@@ -1,6 +1,6 @@
 # PlatformIO
-.pio
-.vscode
+.pio/
+.vscode/
 *.pyc
 __pycache__/
 *.elf
@@ -10,6 +10,16 @@ __pycache__/
 *.exe
 *.dSYM/
 
-# OS
+# OS-specific files
 .DS_Store
 Thumbs.db
+
+# Build and dependency files
+*.a
+*.o
+*.d
+
+# Backup files
+*~
+*.swp
+*.swo
