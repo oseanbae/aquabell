@@ -15,6 +15,9 @@
                 "C:/jpdev/aquabell/lib/relay_control",
                 "C:/jpdev/aquabell/lib/ph_sensor",
                 "C:/jpdev/aquabell/lib/ui_manager",
+                "C:/jpdev/aquabell/lib/hivemq",
+                "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
+                "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                 "C:/jpdev/aquabell/lib/float_switch",
                 "C:/jpdev/aquabell/lib/do_sensor",
                 "C:/jpdev/aquabell/lib/dht_sensor",
@@ -255,8 +258,6 @@
                 "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/USB/src",
                 "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/Update/src",
                 "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
-                "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
-                "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
                 "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
                 ""
             ],
@@ -270,6 +271,9 @@
                     "C:/jpdev/aquabell/lib/relay_control",
                     "C:/jpdev/aquabell/lib/ph_sensor",
                     "C:/jpdev/aquabell/lib/ui_manager",
+                    "C:/jpdev/aquabell/lib/hivemq",
+                    "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
+                    "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                     "C:/jpdev/aquabell/lib/float_switch",
                     "C:/jpdev/aquabell/lib/do_sensor",
                     "C:/jpdev/aquabell/lib/dht_sensor",
@@ -510,8 +514,6 @@
                     "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/USB/src",
                     "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/Update/src",
                     "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src",
-                    "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
-                    "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
                     "C:/Users/VivoBook 15/.platformio/packages/framework-arduinoespressif32/libraries/WiFiProv/src",
                     ""
                 ]

@@ -1,7 +1,10 @@
 #include <Arduino.h>
+#include <Wifi.h>
 #include <RTClib.h>
 
 #include "config.h"
+#include "hivemq.h"
+
 #include "temp_sensor.h"
 #include "ph_sensor.h"
 #include "do_sensor.h"
@@ -13,10 +16,21 @@
 #include "lcd_display.h"
 
 // === CONSTANTS ===
-#define USE_MOCK_DATA false
+#define USE_MOCK_DATA true
+
 RTC_DS3231 rtc;
 RealTimeData current;
 
+
+void connectWiFi() {
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    Serial.print("Connecting to WiFi...");
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println(" connected.");
+}
 
 // === FORWARD DECLARATIONS ===
 void initAllModules();
@@ -39,12 +53,21 @@ void setup() {
         rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
         Serial.println("⚠️ RTC reset to compile time.");
     }
-
     initAllModules();
+    connectWiFi();
+    setupMQTT();
+    connectMQTT();
 }
 
 // === LOOP ===
 void loop() {
+    if (WiFi.status() != WL_CONNECTED) {
+        connectWiFi();
+    }
+
+    if (!isMQTTConnected()) {
+        connectMQTT();
+    }
     unsigned long nowMillis = millis();
 
     DateTime now;
@@ -60,6 +83,32 @@ void loop() {
 
     apply_rules(current, now);
     lcd_display_update(current);
+    
+    char payload[32];
+
+    snprintf(payload, sizeof(payload), "%.2f", current.waterTemp);
+    publishMQTT("aquabell/sensor/waterTemp", payload);
+
+    snprintf(payload, sizeof(payload), "%.2f", current.pH);
+    publishMQTT("aquabell/sensor/pH", payload);
+
+    snprintf(payload, sizeof(payload), "%.2f", current.dissolvedOxygen);
+    publishMQTT("aquabell/sensor/do", payload);
+
+    snprintf(payload, sizeof(payload), "%.2f", current.turbidityNTU);
+    publishMQTT("aquabell/sensor/turbidity", payload);
+
+    snprintf(payload, sizeof(payload), "%.2f", current.airTemp);
+    publishMQTT("aquabell/sensor/airTemp", payload);
+
+    snprintf(payload, sizeof(payload), "%.2f", current.airHumidity);
+    publishMQTT("aquabell/sensor/airHumidity", payload);
+
+    snprintf(payload, sizeof(payload), "%d", current.floatTriggered);
+    publishMQTT("aquabell/sensor/floatSwitch", payload);
+
+    loopMQTT();  // Keep MQTT connection alive
+
     yield();  // Feed watchdog
 }
 

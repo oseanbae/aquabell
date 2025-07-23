@@ -100,7 +100,8 @@
 #define RTC_ADDRESS           0x68
 
 //=== MQTT CONFIG ============
-#define MQTT_SERVER     "aed071c9305b4700ba8ddd588af30e71.s1.eu.hivemq.cloud"
+#define MQTT_CLIENT_ID   "aquabell_main"
+#define MQTT_BROKER     "aed071c9305b4700ba8ddd588af30e71.s1.eu.hivemq.cloud"
 #define MQTT_PORT       8883
 #define MQTT_USER       "aquabell_client"
 #define MQTT_PASS       "aquabell.MQTT413"
