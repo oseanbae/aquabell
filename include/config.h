@@ -99,6 +99,12 @@
 #define RTC_SCL               22
 #define RTC_ADDRESS           0x68
 
+//=== MQTT CONFIG ============
+#define MQTT_SERVER     "aed071c9305b4700ba8ddd588af30e71.s1.eu.hivemq.cloud"
+#define MQTT_PORT       8883
+#define MQTT_USER       "aquabell_client"
+#define MQTT_PASS       "aquabell.MQTT413"
+
 //=== WIFI Configuration ===
 //JAY'S WIFI
 // #define WIFI_SSID             "Tung Tung Tung Sahur"
