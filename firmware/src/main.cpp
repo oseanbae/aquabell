@@ -3,8 +3,6 @@
 #include <RTClib.h>
 
 #include "config.h"
-#include "hivemq.h"
-
 #include "temp_sensor.h"
 #include "ph_sensor.h"
 #include "do_sensor.h"
@@ -55,8 +53,6 @@ void setup() {
     }
     initAllModules();
     connectWiFi();
-    setupMQTT();
-    connectMQTT();
 }
 
 // === LOOP ===
@@ -65,9 +61,6 @@ void loop() {
         connectWiFi();
     }
 
-    if (!isMQTTConnected()) {
-        connectMQTT();
-    }
     unsigned long nowMillis = millis();
 
     DateTime now;
@@ -83,31 +76,6 @@ void loop() {
 
     apply_rules(current, now);
     lcd_display_update(current);
-    
-    char payload[32];
-
-    snprintf(payload, sizeof(payload), "%.2f", current.waterTemp);
-    publishMQTT("aquabell/sensor/waterTemp", payload);
-
-    snprintf(payload, sizeof(payload), "%.2f", current.pH);
-    publishMQTT("aquabell/sensor/pH", payload);
-
-    snprintf(payload, sizeof(payload), "%.2f", current.dissolvedOxygen);
-    publishMQTT("aquabell/sensor/do", payload);
-
-    snprintf(payload, sizeof(payload), "%.2f", current.turbidityNTU);
-    publishMQTT("aquabell/sensor/turbidity", payload);
-
-    snprintf(payload, sizeof(payload), "%.2f", current.airTemp);
-    publishMQTT("aquabell/sensor/airTemp", payload);
-
-    snprintf(payload, sizeof(payload), "%.2f", current.airHumidity);
-    publishMQTT("aquabell/sensor/airHumidity", payload);
-
-    snprintf(payload, sizeof(payload), "%d", current.floatTriggered);
-    publishMQTT("aquabell/sensor/floatSwitch", payload);
-
-    loopMQTT();  // Keep MQTT connection alive
 
     yield();  // Feed watchdog
 }
