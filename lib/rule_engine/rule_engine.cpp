@@ -5,6 +5,8 @@
 #include "float_switch.h"
 #include "RTClib.h"
 
+unsigned long (*getMillis)() = millis;
+
 // === Constants ===
 #define BUZZER_ALERT_FREQ       1000
 #define BUZZER_ALERT_DURATION   1000
@@ -39,7 +41,7 @@ void check_climate_and_control_fan(float airTemp, float humidity, int currentMin
     const int MONITOR_END   = 1020; // 17:00
 
     bool inWindow = currentMinutes >= MONITOR_START && currentMinutes <= MONITOR_END;
-    unsigned long now = millis();
+    unsigned long now = getMillis();
 
     bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;
     bool humHigh = humidity > HUMIDITY_ON_THRESHOLD;
@@ -67,7 +69,7 @@ void check_climate_and_control_fan(float airTemp, float humidity, int currentMin
 
 // === PUMP LOGIC WITH FLOAT SWITCH ===
 void check_and_control_pump(float waterTemp, bool waterLevelLow) {
-    unsigned long now = millis();
+    unsigned long now = getMillis();
 
     // === Handle High Temp Override ===
     if (waterTemp > 30.0 && !overrideActive && millis_elapsed(now, lastOverrideTime) > PUMP_OVERRIDE_COOLDOWN) {
