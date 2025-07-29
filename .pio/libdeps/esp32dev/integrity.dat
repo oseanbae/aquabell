@@ -1,8 +1,0 @@
-marcoschwartz/LiquidCrystal_I2C@^1.1.4
-paulstoffregen/OneWire@^2.3.8
-bblanchon/ArduinoJson@^7.4.2
-milesburton/DallasTemperature@^4.0.4
-adafruit/Adafruit BusIO@^1.14.2
-adafruit/DHT sensor library@^1.4.6
-adafruit/RTClib
-knolleary/PubSubClient@^2.8
