@@ -26,10 +26,13 @@
 // === pH Sensor =============
 #define PH_SENSOR_PIN         39
 #define PH_SENSOR_SAMPLES     100
-#define PH_SAMPLE_DELAY_MS    20 // ms delay between samples
-#define NEUTRAL_PH            7.0       // neutral pH
-#define NEUTRAL_VOLTAGE_MV    1546.50     // << Measure actual voltage when in pH 7 buffer
-#define MV_PER_PH            -59.16    // Approximate Nernst slope at 25°C
+#define PH_SAMPLE_DELAY_MS    20  // Delay between samples (ms)
+
+// Calibration points (Two-Point Method)
+#define CAL_PH1               7.0       // First calibration pH value (neutral)
+#define CAL_VOLTAGE1_MV       1620.0    // Voltage at pH 7 (mV)
+#define CAL_PH2               4.0       // Second calibration pH value (acidic)
+#define CAL_VOLTAGE2_MV       1555.0    // Voltage at pH 4 (mV)
 
 // === DO Sensor =============
 #define DO_SENSOR_PIN         34

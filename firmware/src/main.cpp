@@ -21,15 +21,15 @@ RTC_DS3231 rtc;
 RealTimeData current;
 
 
-void connectWiFi() {
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    Serial.print("Connecting to WiFi...");
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    Serial.println(" connected.");
-}
+// void connectWiFi() {
+//     WiFi.begin(WIFI_SSID, WIFI_PASS);
+//     Serial.print("Connecting to WiFi...");
+//     while (WiFi.status() != WL_CONNECTED) {
+//         delay(500);
+//         Serial.print(".");
+//     }
+//     Serial.println(" connected.");
+// }
 
 // === FORWARD DECLARATIONS ===
 void initAllModules();
@@ -55,17 +55,17 @@ void setup() {
     }
 
     initAllModules();
-    connectWiFi();
+    //connectWiFi();
 
     // >>> Sign-in to Firebase on boot
-    firebaseSignIn();
+    //firebaseSignIn();
 }
 
 // === LOOP ===
 void loop() {
-    if (WiFi.status() != WL_CONNECTED) {
-        connectWiFi();
-    }
+    // if (WiFi.status() != WL_CONNECTED) {
+    //     connectWiFi();
+    // }
 
     unsigned long nowMillis = millis();
 
@@ -77,29 +77,29 @@ void loop() {
         Serial.println("⚠️ RTC unavailable — skipping loop.");
         return;
     }
-    static unsigned long lastLiveUpdate = 0;
-    static unsigned long lastBatchLog = 0;
-    const unsigned long liveInterval = 10000;
-    const unsigned long batchInterval = 600000;
-    const int batchSize = 60;
-    static RealTimeData logBuffer[batchSize];
-    static int logIndex = 0;
+    // static unsigned long lastLiveUpdate = 0;
+    // static unsigned long lastBatchLog = 0;
+    // const unsigned long liveInterval = 10000;
+    // const unsigned long batchInterval = 600000;
+    // const int batchSize = 60;
+    // static RealTimeData logBuffer[batchSize];
+    // static int logIndex = 0;
 
-    // Read new sensor values (or mock if enabled)
-    current = USE_MOCK_DATA ? readMockSensors(nowMillis) : readSensors(nowMillis);
+    // // Read new sensor values (or mock if enabled)
+    // current = USE_MOCK_DATA ? readMockSensors(nowMillis) : readSensors(nowMillis);
 
-    if (nowMillis - lastLiveUpdate >= liveInterval) {
-        pushToFirestoreLive(current);
-        logBuffer[logIndex++] = current;
-        lastLiveUpdate = nowMillis;
-    }
+    // if (nowMillis - lastLiveUpdate >= liveInterval) {
+    //     pushToFirestoreLive(current);
+    //     logBuffer[logIndex++] = current;
+    //     lastLiveUpdate = nowMillis;
+    // }
 
 
-    if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
-        pushBatchLogToFirestore(logBuffer, logIndex);
-        logIndex = 0;
-        lastBatchLog = nowMillis;
-    }
+    // if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
+    //     pushBatchLogToFirestore(logBuffer, logIndex);
+    //     logIndex = 0;
+    //     lastBatchLog = nowMillis;
+    // }
 
     apply_rules(current, now);
     lcd_display_update(current); 
@@ -125,12 +125,12 @@ RealTimeData readSensors(unsigned long now) {
 
     RealTimeData data = current;
 
-
     if (now - lastTempRead >= DS18B20_READ_INTERVAL) {
         float temp = read_waterTemp();
         if (!isnan(temp)) {
             data.waterTemp = temp;
-
+            Serial.print("Water Temp: ");
+            Serial.println(temp);
         }
         lastTempRead = now;
     }
@@ -139,6 +139,8 @@ RealTimeData readSensors(unsigned long now) {
         float ph = read_ph();
         if (!isnan(ph)) {
             data.pH = constrain(ph, 0.0, 14.0);
+            Serial.print("pH: ");
+            Serial.println(data.pH);
         }
         lastPHRead = now;
     }
@@ -148,6 +150,8 @@ RealTimeData readSensors(unsigned long now) {
         float doVal = read_dissolveOxygen(voltage, data.waterTemp);
         if (!isnan(doVal)) {
             data.dissolvedOxygen = max(doVal, 0.0f);
+            Serial.print("Dissolved Oxygen: ");
+            Serial.println(data.dissolvedOxygen);
         }
         lastDORead = now;
     }
@@ -156,6 +160,8 @@ RealTimeData readSensors(unsigned long now) {
         float ntu = read_turbidity();
         if (!isnan(ntu)) {
             data.turbidityNTU = max(ntu, 0.0f);
+            Serial.print("Turbidity (NTU): ");
+            Serial.println(data.turbidityNTU);
         }
         lastTurbidityRead = now;
     }
@@ -165,9 +171,13 @@ RealTimeData readSensors(unsigned long now) {
         float airHumidity = read_dhtHumidity();
         if (!isnan(airTemp)) {
             data.airTemp = airTemp;
+            Serial.print("Air Temp: ");
+            Serial.println(airTemp);
         }
         if (!isnan(airHumidity)) {
             data.airHumidity = airHumidity;
+            Serial.print("Air Humidity: ");
+            Serial.println(airHumidity);
         }
         lastDHTRead = now;
     }
@@ -177,8 +187,10 @@ RealTimeData readSensors(unsigned long now) {
         static bool lastFloatState = false;
         bool floatState = float_switch_active();
         if (floatState != lastFloatState) {
-        data.floatTriggered = floatState;
-        lastFloatState = floatState;
+            data.floatTriggered = floatState;
+            Serial.print("Float Switch Triggered: ");
+            Serial.println(floatState ? "YES" : "NO");
+            lastFloatState = floatState;
         }
     }
 

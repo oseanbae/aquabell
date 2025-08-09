@@ -1,25 +1,38 @@
 #include <Arduino.h>
 #include "config.h"
 
+// Derived from calibration
+float ph_slope = 0.0;
+float ph_intercept = 0.0;
+
+#include <Arduino.h>
+
 // --- Init ---
 void ph_sensor_init() {
     pinMode(PH_SENSOR_PIN, INPUT);
-    analogReadResolution(12);
-    analogSetAttenuation(ADC_11db); // For 0–3.3V input
+    analogReadResolution(12);           // 12-bit ADC: 0–4095
+    analogSetAttenuation(ADC_11db);      // For 0–3.3V input range
+
+    // Calculate slope & intercept from calibration data
+    ph_slope = (CAL_PH2 - CAL_PH1) / (CAL_VOLTAGE2_MV - CAL_VOLTAGE1_MV);
+    ph_intercept = CAL_PH1 - (ph_slope * CAL_VOLTAGE1_MV);
+
+    Serial.println("pH Calibration Applied:");
+    Serial.print("Slope: "); Serial.println(ph_slope, 6);
+    Serial.print("Intercept: "); Serial.println(ph_intercept, 6);
 }
 
 // --- Read trimmed average voltage in mV ---
 float read_ph_voltage_avg() {
     float readings[PH_SENSOR_SAMPLES];
 
-    // Sample
     for (int i = 0; i < PH_SENSOR_SAMPLES; i++) {
         int raw = analogRead(PH_SENSOR_PIN);
-        readings[i] = raw * ADC_VOLTAGE_MV / ADC_MAX;
+        readings[i] = raw * 3300.0 / 4095.0; // Convert to mV
         delay(PH_SAMPLE_DELAY_MS);
     }
 
-    // Sort (bubble sort)
+    // Sort
     for (int i = 0; i < PH_SENSOR_SAMPLES - 1; i++) {
         for (int j = i + 1; j < PH_SENSOR_SAMPLES; j++) {
             if (readings[j] < readings[i]) {
@@ -43,5 +56,6 @@ float read_ph_voltage_avg() {
 // --- Convert voltage to pH ---
 float read_ph() {
     float voltage_mV = read_ph_voltage_avg();
-    return NEUTRAL_PH + (NEUTRAL_VOLTAGE_MV - voltage_mV) / MV_PER_PH;
+    return ph_slope * voltage_mV + ph_intercept;
 }
+
