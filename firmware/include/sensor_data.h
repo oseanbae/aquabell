@@ -10,5 +10,13 @@ struct RealTimeData {
     float turbidityNTU = NAN;
     float airTemp = NAN;
     float airHumidity = NAN;
-    uint8_t floatTriggered = 0; // 0 = false, 1 = true
-};
+    bool floatTriggered = 0; // 0 = false, 1 = true
+
+    struct {
+        bool fan;
+        bool light;
+        bool waterPump;
+        bool airPump;
+        bool valve;
+    } relayStates;
+};  

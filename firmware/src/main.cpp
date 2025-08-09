@@ -12,10 +12,11 @@
 #include "sensor_data.h"
 #include "rule_engine.h"
 #include "lcd_display.h"
+#include "firestore_client.h"
 
 // === CONSTANTS ===
 #define USE_MOCK_DATA true
-
+//C:\Users\<your-user>\AppData\Local\Android\Sdk
 RTC_DS3231 rtc;
 RealTimeData current;
 
@@ -34,6 +35,7 @@ void connectWiFi() {
 void initAllModules();
 RealTimeData readSensors(unsigned long now);
 RealTimeData readMockSensors(unsigned long now);
+
 // === SETUP ===
 void setup() {
     Serial.begin(115200);
@@ -51,8 +53,12 @@ void setup() {
         rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
         Serial.println("⚠️ RTC reset to compile time.");
     }
+
     initAllModules();
     connectWiFi();
+
+    // >>> Sign-in to Firebase on boot
+    firebaseSignIn();
 }
 
 // === LOOP ===
@@ -64,18 +70,39 @@ void loop() {
     unsigned long nowMillis = millis();
 
     DateTime now;
+
     if (rtc.begin()) {
         now = rtc.now();
     } else {
         Serial.println("⚠️ RTC unavailable — skipping loop.");
         return;
     }
+    static unsigned long lastLiveUpdate = 0;
+    static unsigned long lastBatchLog = 0;
+    const unsigned long liveInterval = 10000;
+    const unsigned long batchInterval = 600000;
+    const int batchSize = 60;
+    static RealTimeData logBuffer[batchSize];
+    static int logIndex = 0;
 
     // Read new sensor values (or mock if enabled)
     current = USE_MOCK_DATA ? readMockSensors(nowMillis) : readSensors(nowMillis);
 
+    if (nowMillis - lastLiveUpdate >= liveInterval) {
+        pushToFirestoreLive(current);
+        logBuffer[logIndex++] = current;
+        lastLiveUpdate = nowMillis;
+    }
+
+
+    if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
+        pushBatchLogToFirestore(logBuffer, logIndex);
+        logIndex = 0;
+        lastBatchLog = nowMillis;
+    }
+
     apply_rules(current, now);
-    lcd_display_update(current);
+    lcd_display_update(current); 
 
     yield();  // Feed watchdog
 }
