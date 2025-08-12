@@ -16,10 +16,6 @@ void ph_sensor_init() {
     // Calculate slope & intercept from calibration data
     ph_slope = (CAL_PH2 - CAL_PH1) / (CAL_VOLTAGE2_MV - CAL_VOLTAGE1_MV);
     ph_intercept = CAL_PH1 - (ph_slope * CAL_VOLTAGE1_MV);
-
-    Serial.println("pH Calibration Applied:");
-    Serial.print("Slope: "); Serial.println(ph_slope, 6);
-    Serial.print("Intercept: "); Serial.println(ph_intercept, 6);
 }
 
 // --- Read trimmed average voltage in mV ---

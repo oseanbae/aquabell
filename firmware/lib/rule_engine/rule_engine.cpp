@@ -86,13 +86,13 @@ void check_and_control_pump(float waterTemp, bool waterLevelLow) {
 
     // === Float switch safety ===
     if (waterLevelLow) {
-        
-        control_pump(false);             // Always force OFF if water is low
-        control_valve(true);            // Start refill valve
+        control_pump(false);    // Always force OFF if water is low
+        control_valve(true);    // Start refill valve
+        Serial.println("🚰 Emergency refill active — water level low");
         return;
     }
 
-    control_valve(false);               // Stop refill if water level is OK
+    control_valve(false);       // Stop refill if water level is OK
 
     // === Normal Pump Cycle ===
     if (overrideActive) {
@@ -130,21 +130,48 @@ void trigger_alert_if_needed(float turbidity, float waterTemp, float pH, float D
 
 // === MAIN DISPATCH ===
 void apply_rules(const RealTimeData& current, const DateTime& now) {
+    Serial.println("========== RULES DEBUG START ==========");
     int currentMinutes = now.hour() * 60 + now.minute();
-    bool waterLevelLow = is_float_switch_triggered();
 
-    if (waterLevelLow) {
+    // Continuous water level detection
+    bool waterLevelLow = float_switch_active();
+
+    // Always log readings
+    Serial.printf(
+        "[DEBUG] Time=%02d:%02d | WT=%.2f°C | AT=%.2f°C | RH=%.2f%% | pH=%.2f | DO=%.2f | Turb=%.2f | Float=%d\n",
+        now.hour(), now.minute(),
+        current.waterTemp,
+        current.airTemp,
+        current.airHumidity,
+        current.pH,
+        current.dissolvedOxygen,
+        current.turbidityNTU,
+        waterLevelLow
+    );
+
+    // Alert only once when water level first drops
+    if (is_float_switch_triggered()) {
         Serial.println("💧 Float switch triggered — low water level");
         playTone(BUZZER_FLOAT_FREQ, BUZZER_FLOAT_DURATION);
+    } else {
+        Serial.println("[DEBUG] Water level normal.");
     }
 
+    // Fan control
     check_climate_and_control_fan(current.airTemp, current.airHumidity, currentMinutes);
+
+    // Pump + emergency refill
     check_and_control_pump(current.waterTemp, waterLevelLow);
+
+    // Light control
     check_and_control_light(now);
+
+    // Safety alerts
     trigger_alert_if_needed(
         current.turbidityNTU,
         current.waterTemp,
         current.pH,
         current.dissolvedOxygen
     );
+    Serial.println("========== RULES DEBUG END ==========");
 }

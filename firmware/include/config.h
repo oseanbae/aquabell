@@ -115,9 +115,9 @@
 // #define WIFI_PASS         "SkibidiToilet_00"
 
 //SHIELA'S WIFI
-#define WIFI_SSID          "SHIBOL"
-#define WIFI_PASS      "SPES2025_"
+// #define WIFI_SSID          "SHIBOL"
+// #define WIFI_PASS      "SPES2025_"
 
 //JP'S WIFI
-// #define WIFI_SSID   "meow"
-// #define WIFI_PASS   "helloworld2025"
+#define WIFI_SSID   "meow"
+#define WIFI_PASS   "helloworld2025"

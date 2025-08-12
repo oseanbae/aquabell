@@ -140,7 +140,7 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size) {
     DateTime now = rtc.now();
     char dateStr[11];  // YYYY-MM-DD + null
     snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", now.year(), now.month(), now.day());
-
+    
     String timestamp = String(millis());
 
     String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/sensor_logs/" + String(dateStr) + "_" + timestamp;
