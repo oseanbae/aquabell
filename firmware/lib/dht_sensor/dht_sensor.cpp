@@ -11,30 +11,28 @@ void dht_sensor_init() {
     dht.begin();
 }
 
-// Clamp function to ensure values are within a specified range
-// This function ensures that the value is not less than min_val and not greater than max_val
-static float clamp(float val, float minVal, float maxVal) {
-    if (val < minVal) return minVal;
-    if (val > maxVal) return maxVal;
-    return val;
-}
-
-// Read and clamp temperature in Celsius
+// Read temperature in Celsius (raw, only clamp to physical safe range)
 float read_dhtTemp() {
     float temp = dht.readTemperature();
     if (isnan(temp)) {
         Serial.println("DHT temperature read failed.");
-        return -999.0f;
+        return NAN;
     }
-    return clamp(temp, -40.0f, 80.0f); // DHT11/22 safe range
+    // DHT spec range check: -40 to 80 °C
+    if (temp < -40.0f) temp = -40.0f;
+    if (temp > 80.0f)  temp = 80.0f;
+    return temp;
 }
 
-// Read and clamp humidity in %
+// Read humidity in %
 float read_dhtHumidity() {
     float hum = dht.readHumidity();
     if (isnan(hum)) {
         Serial.println("DHT humidity read failed.");
-        return -1.0f;
+        return NAN;
     }
-    return clamp(hum, 0.0f, 100.0f);
+    // Clamp to physical 0–100 %
+    if (hum < 0.0f)   hum = 0.0f;
+    if (hum > 100.0f) hum = 100.0f;
+    return hum;
 }
