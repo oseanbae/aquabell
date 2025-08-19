@@ -10,7 +10,7 @@
 #define DHT_TYPE              11
 
 // === DS18B20 (Water Temp) ===
-#define ONE_WIRE_BUS             35
+#define ONE_WIRE_BUS             4
 
 // === Turbidity =============
 #define TURBIDITY_PIN           36

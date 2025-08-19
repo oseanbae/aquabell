@@ -16,7 +16,7 @@ struct RealTimeData {
         bool fan;
         bool light;
         bool waterPump;
-        bool airPump;
         bool valve;
     } relayStates;
 };  
+

@@ -107,7 +107,7 @@ void pushToFirestoreLive(const RealTimeData &data) {
     relayMap["fan"]["booleanValue"] = data.relayStates.fan;
     relayMap["light"]["booleanValue"] = data.relayStates.light;
     relayMap["waterPump"]["booleanValue"] = data.relayStates.waterPump;
-    relayMap["airPump"]["booleanValue"] = data.relayStates.airPump;
+  //relayMap["airPump"]["booleanValue"] = data.relayStates.airPump;
     relayMap["valve"]["booleanValue"] = data.relayStates.valve;
 
     String payload;
