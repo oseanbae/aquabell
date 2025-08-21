@@ -13,7 +13,7 @@
 #define ONE_WIRE_BUS             4
 
 // === Turbidity =============
-#define TURBIDITY_PIN           36
+#define TURBIDITY_PIN           34
 #define NUM_SAMPLES             10
 #define R1                      10000.0f
 #define R2                      20000.0f
@@ -24,7 +24,7 @@
 
 
 // === pH Sensor =============
-#define PH_SENSOR_PIN         39
+#define PH_SENSOR_PIN         32
 #define PH_SENSOR_SAMPLES     100
 #define PH_SAMPLE_DELAY_MS    20  // Delay between samples (ms)
 
@@ -35,13 +35,13 @@
 #define CAL_VOLTAGE2_MV       1555.0    // Voltage at pH 4 (mV)
 
 // === DO Sensor =============
-#define DO_SENSOR_PIN         34
+#define DO_SENSOR_PIN         33
 #define DO_CAL_TEMP           31.37    // °C from your calibration
 #define DO_CAL_VOLTAGE        453.14   // mV from your calibration
 #define DO_SENSOR_SAMPLES     32
 
 // === Float Switch ==========
-#define FLOAT_SWITCH_PIN      33
+#define FLOAT_SWITCH_PIN      35
 #define FLOAT_SWITCH_TRIGGERED LOW
 
 // === 16x2 I2C LCD Display ===
@@ -70,7 +70,6 @@
 #define FAN_RELAY_PIN         19
 #define LIGHT_RELAY_PIN       18
 #define PUMP_RELAY_PIN        5
-#define AIR_RELAY_PIN         17
 #define VALVE_RELAY_PIN       16
 
 // === Fan Runtime Control ====
@@ -102,22 +101,15 @@
 #define RTC_SCL               22
 #define RTC_ADDRESS           0x68
 
-//=== MQTT CONFIG ============
-#define MQTT_CLIENT_ID   "aquabell_main"
-#define MQTT_BROKER     "aed071c9305b4700ba8ddd588af30e71.s1.eu.hivemq.cloud"
-#define MQTT_PORT       8883
-#define MQTT_USER       "aquabell_client"
-#define MQTT_PASS       "aquabell.MQTT413"
-
 //=== WIFI Configuration ===
-//JAY'S WIFI
-// #define WIFI_SSID             "Tung Tung Tung Sahur"
-// #define WIFI_PASS         "SkibidiToilet_00"
-
 //SHIELA'S WIFI
 // #define WIFI_SSID          "SHIBOL"
 // #define WIFI_PASS      "SPES2025_"
 
 //JP'S WIFI
-#define WIFI_SSID   "meow"
-#define WIFI_PASS   "helloworld2025"
+// #define WIFI_SSID   "meow"
+// #define WIFI_PASS   "helloworld2025"
+
+//Capstone wifi
+#define WIFI_SSID           "Capstone"
+#define WIFI_PASS           "capstone"
