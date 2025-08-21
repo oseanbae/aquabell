@@ -37,6 +37,12 @@ void playTone(int freq, int duration) {
 
 // === FAN LOGIC ===
 void check_climate_and_control_fan(float airTemp, float humidity, int currentMinutes) {
+    // ← ADDED: Sensor validation
+    if (isnan(airTemp) || isnan(humidity)) {
+        Serial.println("⚠️ Invalid sensor data for fan control");
+        return;
+    }
+
     const int MONITOR_START = 480;  // 08:00
     const int MONITOR_END   = 1020; // 17:00
 
@@ -58,7 +64,7 @@ void check_climate_and_control_fan(float airTemp, float humidity, int currentMin
         fanOnSince = now;
         control_fan(true);
         playTone(BUZZER_ACTUATOR_FREQ, BUZZER_ACTUATOR_DURATION);
-        Serial.println("🌀 Fan ON — Triggered by climate or emergency");
+        Serial.printf("🌀 Fan ON — Temp: %.1f°C, Humidity: %.1f%%\n", airTemp, humidity);
     } else if (shouldTurnOff && millis_elapsed(now, fanOnSince) >= FAN_MINUTE_RUNTIME) {
         fanActive = false;
         control_fan(false);
@@ -68,14 +74,20 @@ void check_climate_and_control_fan(float airTemp, float humidity, int currentMin
 }
 
 // === PUMP LOGIC WITH FLOAT SWITCH ===
-void check_and_control_pump(float waterTemp, bool waterLevelLow) {
+void check_and_control_pump(float waterTemp, bool waterLevelLow) {  // ← FIXED: Match header signature
+    // ← ADDED: Sensor validation
+    if (isnan(waterTemp)) {
+        Serial.println("⚠️ Invalid water temperature for pump control");
+        return;
+    }
+
     unsigned long now = getMillis();
 
     // === Handle High Temp Override ===
     if (waterTemp > 30.0 && !overrideActive && millis_elapsed(now, lastOverrideTime) > PUMP_OVERRIDE_COOLDOWN) {
         overrideActive = true;
         lastOverrideTime = now;
-        Serial.println("⚠️ Pump override ON — water > 30°C");
+        Serial.printf("⚠️ Pump override ON — water temp: %.1f°C\n", waterTemp);
         playTone(BUZZER_ACTUATOR_FREQ, BUZZER_ACTUATOR_DURATION);
     }
     if (overrideActive && millis_elapsed(now, lastOverrideTime) >= PUMP_OVERRIDE_DURATION) {
@@ -100,14 +112,17 @@ void check_and_control_pump(float waterTemp, bool waterLevelLow) {
         return;
     }
 
-    if (!pumpScheduledOn && millis_elapsed(now, lastPumpToggle) >= PUMP_OFF_DURATION) {
+    // ← FIXED: Convert minutes to milliseconds
+    if (!pumpScheduledOn && millis_elapsed(now, lastPumpToggle) >= (PUMP_OFF_DURATION * 60000UL)) {
         pumpScheduledOn = true;
         lastPumpToggle = now;
         control_pump(true);
-    } else if (pumpScheduledOn && millis_elapsed(now, lastPumpToggle) >= PUMP_ON_DURATION) {
+        Serial.println("🔄 Pump cycle starting");
+    } else if (pumpScheduledOn && millis_elapsed(now, lastPumpToggle) >= (PUMP_ON_DURATION * 60000UL)) {
         pumpScheduledOn = false;
         lastPumpToggle = now;
         control_pump(false);
+        Serial.println("⏸️ Pump cycle pausing");
     }
 }
 
@@ -121,40 +136,50 @@ void check_and_control_light(DateTime now) {
 
 // === BUZZER ALERT ===
 void trigger_alert_if_needed(float turbidity, float waterTemp, float pH, float DOmgL) {
-    bool alert = turbidity > 800.0 || waterTemp > 32.0 || pH < 5.5 || pH > 8.5 || DOmgL < 3.0;
+    // ← ADDED: Sensor validation
+    if (isnan(turbidity) || isnan(waterTemp) || isnan(pH) || isnan(DOmgL)) {
+        Serial.println("⚠️ Invalid sensor data for alert checking");
+        return;
+    }
+
+    // ← IMPROVED: More informative alert messages
+    bool alert = false;
+    String alertMessage = "";
+    
+    if (turbidity > 800.0) {
+        alert = true;
+        alertMessage += "High turbidity (" + String(turbidity) + " NTU) ";
+    }
+    if (waterTemp > 32.0) {
+        alert = true;
+        alertMessage += "High water temp (" + String(waterTemp) + "°C) ";
+    }
+    if (pH < 5.5 || pH > 8.5) {
+        alert = true;
+        alertMessage += "Unsafe pH (" + String(pH) + ") ";
+    }
+    if (DOmgL < 3.0) {
+        alert = true;
+        alertMessage += "Low DO (" + String(DOmgL) + " mg/L) ";
+    }
+    
     if (alert) {
         playTone(BUZZER_ALERT_FREQ, BUZZER_ALERT_DURATION);
-        Serial.println("🚨 ALERT: Sensor reading out of safe range");
+        Serial.println("🚨 ALERT: " + alertMessage);
     }
 }
 
 // === MAIN DISPATCH ===
 void apply_rules(const RealTimeData& current, const DateTime& now) {
-    Serial.println("========== RULES DEBUG START ==========");
     int currentMinutes = now.hour() * 60 + now.minute();
 
-    // Continuous water level detection
-    bool waterLevelLow = float_switch_active();
-
-    // Always log readings
-    Serial.printf(
-        "[DEBUG] Time=%02d:%02d | WT=%.2f°C | AT=%.2f°C | RH=%.2f%% | pH=%.2f | DO=%.2f | Turb=%.2f | Float=%d\n",
-        now.hour(), now.minute(),
-        current.waterTemp,
-        current.airTemp,
-        current.airHumidity,
-        current.pH,
-        current.dissolvedOxygen,
-        current.turbidityNTU,
-        waterLevelLow
-    );
+    // ← FIXED: Use data from current instead of calling float_switch_active() twice
+    bool waterLevelLow = current.floatTriggered;
 
     // Alert only once when water level first drops
-    if (is_float_switch_triggered()) {
+    if (current.floatTriggered) {
         Serial.println("💧 Float switch triggered — low water level");
         playTone(BUZZER_FLOAT_FREQ, BUZZER_FLOAT_DURATION);
-    } else {
-        Serial.println("[DEBUG] Water level normal.");
     }
 
     // Fan control
@@ -173,5 +198,4 @@ void apply_rules(const RealTimeData& current, const DateTime& now) {
         current.pH,
         current.dissolvedOxygen
     );
-    Serial.println("========== RULES DEBUG END ==========");
 }

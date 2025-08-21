@@ -40,37 +40,70 @@ void connectWiFi() {
 void setup() {
     Serial.begin(115200);
     delay(1000);
+    Serial.println("🚀 AquaBell System Starting...");
 
     analogReadResolution(12);
     analogSetAttenuation(ADC_11db);
 
-    while (!rtc.begin()) {
+    // Initialize RTC with timeout
+    int rtcAttempts = 0;
+    while (!rtc.begin() && rtcAttempts < 10) {
         Serial.println("❌ RTC not found. Retrying...");
         delay(3000);
+        rtcAttempts++;
+    }
+    
+    if (rtcAttempts >= 10) {
+        Serial.println("❌ RTC initialization failed. Continuing without RTC.");
+    } else {
+        Serial.println("✅ RTC initialized successfully.");
     }
 
-    // if (rtc.lostPower()) {
-    //     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    //     Serial.printl    n("⚠️ RTC reset to compile time.");
-    // }
+    // Non-blocking WiFi connection
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    Serial.print("Connecting to WiFi...");
+    
+    int wifiAttempts = 0;
+    while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20) {
+        delay(500);
+        Serial.print(".");
+        wifiAttempts++;
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println(" connected.");
+        firebaseSignIn();
+    } else {
+        Serial.println(" failed. Continuing without WiFi.");
+    }
 
-    connectWiFi();
-
-    //>>> Sign-in to Firebase on boot
-    firebaseSignIn();
     initAllModules();
+    Serial.println("✅ System initialization complete.");
 }
 
 // === LOOP ===
-unsigned long lastRuleCheck = 0;
-
 void loop() {
+    unsigned long nowMillis = millis();
+
+    // Non-blocking WiFi check
     if (WiFi.status() != WL_CONNECTED) {
-        connectWiFi();
+        static unsigned long lastWiFiAttempt = 0;
+        if (nowMillis - lastWiFiAttempt >= 30000) { // Try every 30 seconds
+            Serial.println(" Attempting WiFi reconnection...");
+            WiFi.reconnect();
+            lastWiFiAttempt = nowMillis;
+        }
     }
 
-    unsigned long nowMillis = millis(); 
+    // Read sensors
+    bool updated = readSensors(nowMillis, current);
+    
+    // ← ENABLE RULE ENGINE
+    if (updated || is_float_switch_triggered()) {
+        apply_rules(current, rtc.now());
+    }
 
+    // Firebase updates (only if WiFi is connected)
     static unsigned long lastLiveUpdate = 0;
     static unsigned long lastBatchLog = 0;
     const unsigned long liveInterval = 10000;
@@ -79,23 +112,20 @@ void loop() {
     static RealTimeData logBuffer[batchSize];
     static int logIndex = 0;
 
-    bool updated = readSensors(nowMillis, current);
-    // if (updated || is_float_switch_triggered()) {
-    //     apply_rules(current, rtc.now());
-    // }
+    if (WiFi.status() == WL_CONNECTED) {
+        if (nowMillis - lastLiveUpdate >= liveInterval) {
+            pushToFirestoreLive(current);
+            logBuffer[logIndex++] = current;
+            lastLiveUpdate = nowMillis;
+        }
 
-    if (nowMillis - lastLiveUpdate >= liveInterval) {
-        pushToFirestoreLive(current);
-        logBuffer[logIndex++] = current;
-        lastLiveUpdate = nowMillis;
+        if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
+            pushBatchLogToFirestore(logBuffer, logIndex);
+            logIndex = 0;
+            lastBatchLog = nowMillis;
+        }
     }
 
-
-    if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
-        pushBatchLogToFirestore(logBuffer, logIndex);
-        logIndex = 0;
-        lastBatchLog = nowMillis;
-    }
     yield();
 }
 
@@ -108,67 +138,105 @@ void initAllModules() {
     dht_sensor_init();
     float_switch_init();
     lcd_init();
+    relay_control_init(); // ← ADD MISSING RELAY INIT
     Serial.println("✅ All modules initialized successfully.");
 }
 
-// === SENSOR READ FUNCTION ===
+// === IMPROVED SENSOR READING ===
 bool readSensors(unsigned long now, RealTimeData &data) {
     static unsigned long lastTempRead = 0, lastPHRead = 0, lastDORead = 0;
     static unsigned long lastTurbidityRead = 0, lastDHTRead = 0, lastFloatRead = 0;
     static bool lastFloatState = false;
 
     bool updated = false;
-    data = current;
+    // ← FIXED: Don't overwrite data unnecessarily
+    // data = current; // REMOVED THIS LINE
 
     // --- Water Temp ---
     if (now - lastTempRead >= DS18B20_READ_INTERVAL) {
-        data.waterTemp = USE_MOCK_DATA ? 
+        float temp = USE_MOCK_DATA ? 
             25.0 + (rand() % 100) / 10.0 : read_waterTemp();
-        displaySensorReading("Water Temp", data.waterTemp, "°C");
-        lastTempRead = now;
-        updated = true;
+        
+        // ← ADDED: Validation
+        if (!isnan(temp) && temp > -50.0f && temp < 100.0f) {
+            data.waterTemp = temp;
+            displaySensorReading("Water Temp", data.waterTemp, "°C");
+            lastTempRead = now;
+            updated = true;
+        } else {
+            Serial.println("⚠️ Invalid water temperature reading");
+        }
     }
 
     // --- pH ---
     if (now - lastPHRead >= PH_READ_INTERVAL) {
-        data.pH = USE_MOCK_DATA ? 
+        float ph = USE_MOCK_DATA ? 
             6.5 + (rand() % 50) / 10.0 : read_ph();
-        displaySensorReading("pH", data.pH, "");
-        lastPHRead = now;
-        updated = true;
+        
+        if (!isnan(ph) && ph > 0.0f && ph < 14.0f) {
+            data.pH = ph;
+            displaySensorReading("pH", data.pH, "");
+            lastPHRead = now;
+            updated = true;
+        } else {
+            Serial.println("⚠️ Invalid pH reading");
+        }
     }
 
     // --- Dissolved Oxygen ---
     if (now - lastDORead >= DO_READ_INTERVAL) {
-        data.dissolvedOxygen = USE_MOCK_DATA ? 
+        float doValue = USE_MOCK_DATA ? 
             5.0 + (rand() % 40) / 10.0 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
-        displaySensorReading("Dissolved Oxygen", data.dissolvedOxygen, "mg/L");
-        lastDORead = now;
-        updated = true;
+        
+        if (!isnan(doValue) && doValue >= 0.0f && doValue < 20.0f) {
+            data.dissolvedOxygen = doValue;
+            displaySensorReading("Dissolved Oxygen", data.dissolvedOxygen, "mg/L");
+            lastDORead = now;
+            updated = true;
+        } else {
+            Serial.println("⚠️ Invalid DO reading");
+        }
     }
 
     // --- Turbidity ---
     if (now - lastTurbidityRead >= TURBIDITY_READ_INTERVAL) {
-        data.turbidityNTU = USE_MOCK_DATA ? 
+        float turbidity = USE_MOCK_DATA ? 
             (rand() % 1000) / 10.0 : read_turbidity();
-        displaySensorReading("Turbidity", data.turbidityNTU, "NTU");
-        lastTurbidityRead = now;
-        updated = true;
+        
+        if (!isnan(turbidity) && turbidity >= 0.0f && turbidity < 2000.0f) {
+            data.turbidityNTU = turbidity;
+            displaySensorReading("Turbidity", data.turbidityNTU, "NTU");
+            lastTurbidityRead = now;
+            updated = true;
+        } else {
+            Serial.println("⚠️ Invalid turbidity reading");
+        }
     }
 
     // --- DHT ---
     if (now - lastDHTRead >= DHT_READ_INTERVAL) {
+        float airTemp, airHumidity;
+        
         if (USE_MOCK_DATA) {
-            data.airTemp = 20.0 + (rand() % 150) / 10.0;
-            data.airHumidity = 40.0 + (rand() % 600) / 10.0;
+            airTemp = 20.0 + (rand() % 150) / 10.0;
+            airHumidity = 40.0 + (rand() % 600) / 10.0;
         } else {
-            data.airTemp = read_dhtTemp();
-            data.airHumidity = read_dhtHumidity();
+            airTemp = read_dhtTemp();
+            airHumidity = read_dhtHumidity();
         }
-        displaySensorReading("Air Temp", data.airTemp, "°C");
-        displaySensorReading("Air Humidity", data.airHumidity, "%");
-        lastDHTRead = now;
-        updated = true;
+        
+        if (!isnan(airTemp) && !isnan(airHumidity) && 
+            airTemp > -40.0f && airTemp < 80.0f &&
+            airHumidity >= 0.0f && airHumidity <= 100.0f) {
+            data.airTemp = airTemp;
+            data.airHumidity = airHumidity;
+            displaySensorReading("Air Temp", data.airTemp, "°C");
+            displaySensorReading("Air Humidity", data.airHumidity, "%");
+            lastDHTRead = now;
+            updated = true;
+        } else {
+            Serial.println("⚠️ Invalid DHT readings");
+        }
     }
 
     // --- Float Switch ---
