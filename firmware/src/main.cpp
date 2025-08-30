@@ -11,7 +11,6 @@
 #include "float_switch.h"
 #include "sensor_data.h"
 #include "rule_engine.h"
-#include "lcd_display.h"
 #include "firestore_client.h"
 
 // === CONSTANTS ===
@@ -119,11 +118,11 @@ void loop() {
             lastLiveUpdate = nowMillis;
         }
 
-        if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
-            pushBatchLogToFirestore(logBuffer, logIndex);
-            logIndex = 0;
-            lastBatchLog = nowMillis;
-        }
+            if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
+        pushBatchLogToFirestore(logBuffer, logIndex, rtc.now());
+        logIndex = 0;
+        lastBatchLog = nowMillis;
+    }
     }
 
     yield();
@@ -137,8 +136,7 @@ void initAllModules() {
     turbidity_sensor_init();
     dht_sensor_init();
     float_switch_init();
-    lcd_init();
-    relay_control_init(); // ← ADD MISSING RELAY INIT
+    relay_control_init(); 
     Serial.println("✅ All modules initialized successfully.");
 }
 

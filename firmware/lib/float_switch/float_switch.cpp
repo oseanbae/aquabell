@@ -1,5 +1,5 @@
 #include "Arduino.h"
-#include "config.h"  // defines FLOAT_SWITCH_PIN
+#include "config.h"
 #include "float_switch.h"
 
 // Debounce state tracking
@@ -10,8 +10,6 @@ const unsigned long debounceDelay = 50; // milliseconds
 
 void float_switch_init() {
     pinMode(FLOAT_SWITCH_PIN, INPUT_PULLUP); // Assumes float switch pulls LOW when water is low
-    pinMode(BUZZER_PIN, OUTPUT);    // start off
-    digitalWrite(BUZZER_PIN, LOW);
 }
 
 // Returns true if float switch is currently LOW (water is low)

@@ -31,10 +31,6 @@ inline unsigned long millis_elapsed(unsigned long now, unsigned long since) {
     return (unsigned long)(now - since);
 }
 
-void playTone(int freq, int duration) {
-    tone(BUZZER_PIN, freq, duration);
-}
-
 // === FAN LOGIC ===
 void check_climate_and_control_fan(float airTemp, float humidity, int currentMinutes) {
     // ← ADDED: Sensor validation
@@ -63,12 +59,10 @@ void check_climate_and_control_fan(float airTemp, float humidity, int currentMin
         fanActive = true;
         fanOnSince = now;
         control_fan(true);
-        playTone(BUZZER_ACTUATOR_FREQ, BUZZER_ACTUATOR_DURATION);
         Serial.printf("🌀 Fan ON — Temp: %.1f°C, Humidity: %.1f%%\n", airTemp, humidity);
     } else if (shouldTurnOff && millis_elapsed(now, fanOnSince) >= FAN_MINUTE_RUNTIME) {
         fanActive = false;
         control_fan(false);
-        playTone(BUZZER_ACTUATOR_FREQ, BUZZER_ACTUATOR_DURATION);
         Serial.println("✅ Fan OFF — Conditions normal or max runtime exceeded");
     }
 }
@@ -88,12 +82,10 @@ void check_and_control_pump(float waterTemp, bool waterLevelLow) {  // ← FIXED
         overrideActive = true;
         lastOverrideTime = now;
         Serial.printf("⚠️ Pump override ON — water temp: %.1f°C\n", waterTemp);
-        playTone(BUZZER_ACTUATOR_FREQ, BUZZER_ACTUATOR_DURATION);
     }
     if (overrideActive && millis_elapsed(now, lastOverrideTime) >= PUMP_OVERRIDE_DURATION) {
         overrideActive = false;
         Serial.println("✅ Pump override OFF — duration complete");
-        playTone(BUZZER_ACTUATOR_FREQ, BUZZER_ACTUATOR_DURATION);
     }
 
     // === Float switch safety ===
@@ -164,7 +156,6 @@ void trigger_alert_if_needed(float turbidity, float waterTemp, float pH, float D
     }
     
     if (alert) {
-        playTone(BUZZER_ALERT_FREQ, BUZZER_ALERT_DURATION);
         Serial.println("🚨 ALERT: " + alertMessage);
     }
 }
@@ -179,7 +170,6 @@ void apply_rules(const RealTimeData& current, const DateTime& now) {
     // Alert only once when water level first drops
     if (current.floatTriggered) {
         Serial.println("💧 Float switch triggered — low water level");
-        playTone(BUZZER_FLOAT_FREQ, BUZZER_FLOAT_DURATION);
     }
 
     // Fan control

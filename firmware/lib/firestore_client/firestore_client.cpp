@@ -5,6 +5,7 @@
 #include "config.h"
 #include "sensor_data.h"
 #include "RTClib.h"
+#include "relay_control.h"
 
 #define FIREBASE_PROJECT_ID "aquabell-cap2025"
 #define DEVICE_ID "aquabell_esp32"
@@ -16,7 +17,7 @@ String idToken = "";
 String refreshToken = "";
 unsigned long tokenExpiryTime = 0;
 
-RTC_DS3231 rtc;
+// RTC instance is defined in main.cpp, we'll use it via parameter
 
 void firebaseSignIn() {
     WiFiClientSecure client;
@@ -91,7 +92,7 @@ void pushToFirestoreLive(const RealTimeData &data) {
 
     String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/live_data/" DEVICE_ID;
 
-    JsonDocument doc;
+    StaticJsonDocument<768> doc; // compact live payload
     JsonObject fields = doc["fields"].to<JsonObject>();
 
     fields["waterTemp"]["doubleValue"] = data.waterTemp;
@@ -107,7 +108,6 @@ void pushToFirestoreLive(const RealTimeData &data) {
     relayMap["fan"]["booleanValue"] = data.relayStates.fan;
     relayMap["light"]["booleanValue"] = data.relayStates.light;
     relayMap["waterPump"]["booleanValue"] = data.relayStates.waterPump;
-  //relayMap["airPump"]["booleanValue"] = data.relayStates.airPump;
     relayMap["valve"]["booleanValue"] = data.relayStates.valve;
 
     String payload;
@@ -128,44 +128,56 @@ void pushToFirestoreLive(const RealTimeData &data) {
     } else {
         Serial.print("[Firestore] Live data update failed: ");
         Serial.println(https.errorToString(httpResponseCode));
+        delay(5000);
+        httpResponseCode = https.sendRequest("PATCH", payload);
+        if (httpResponseCode == 200) Serial.println("[Firestore] Live data updated on retry.");
     }
 
     https.end();
 }
 
 
-void pushBatchLogToFirestore(RealTimeData *buffer, int size) {
+void pushBatchLogToFirestore(RealTimeData *buffer, int size, const DateTime& now) {
     if (millis() > tokenExpiryTime) refreshIdToken();
 
-    DateTime now = rtc.now();
-    char dateStr[11];  // YYYY-MM-DD + null
+    if (size <= 0) return;
+
+    // Compute 5-min averages over the buffer
+    double sumWater = 0, sumPH = 0, sumDO = 0, sumNTU = 0, sumAirT = 0, sumAirH = 0;
+    int count = 0;
+    for (int i = 0; i < size; i++) {
+        sumWater += buffer[i].waterTemp;
+        sumPH += buffer[i].pH;
+        sumDO += buffer[i].dissolvedOxygen;
+        sumNTU += buffer[i].turbidityNTU;
+        sumAirT += buffer[i].airTemp;
+        sumAirH += buffer[i].airHumidity;
+        count++;
+    }
+
+    float avgWater = count ? (float)(sumWater / count) : 0;
+    float avgPH = count ? (float)(sumPH / count) : 0;
+    float avgDO = count ? (float)(sumDO / count) : 0;
+    float avgNTU = count ? (float)(sumNTU / count) : 0;
+    float avgAirT = count ? (float)(sumAirT / count) : 0;
+    float avgAirH = count ? (float)(sumAirH / count) : 0;
+
+    char dateStr[11];  // YYYY-MM-DD
     snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", now.year(), now.month(), now.day());
-    
-    String timestamp = String(millis());
+    String timestamp = String(now.unixtime());
 
     String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/sensor_logs/" + String(dateStr) + "_" + timestamp;
 
-    // Adjust size if batch is large
-    const size_t docSize = 8192 + (size * 512);
-    DynamicJsonDocument doc(docSize);
-
+    StaticJsonDocument<512> doc; // compact averaged payload
     JsonObject fields = doc["fields"].to<JsonObject>();
-    JsonObject logs = fields["logs"].to<JsonObject>();
-    JsonObject arrayValue = logs["arrayValue"].to<JsonObject>();
-    JsonArray values = arrayValue["values"].to<JsonArray>();
-
-    for (int i = 0; i < size; i++) {
-        JsonObject entry = values.add<JsonObject>();
-        JsonObject mapVal = entry["mapValue"]["fields"].to<JsonObject>();
-
-        mapVal["waterTemp"]["doubleValue"] = buffer[i].waterTemp;
-        mapVal["pH"]["doubleValue"] = buffer[i].pH;
-        mapVal["dissolvedOxygen"]["doubleValue"] = buffer[i].dissolvedOxygen;
-        mapVal["turbidityNTU"]["doubleValue"] = buffer[i].turbidityNTU;
-        mapVal["airTemp"]["doubleValue"] = buffer[i].airTemp;
-        mapVal["airHumidity"]["doubleValue"] = buffer[i].airHumidity;
-        mapVal["floatTriggered"]["booleanValue"] = buffer[i].floatTriggered;
-    }
+    fields["timestamp"]["integerValue"] = (long long)now.unixtime();
+    fields["avgWaterTemp"]["doubleValue"] = avgWater;
+    fields["avgPH"]["doubleValue"] = avgPH;
+    fields["avgDO"]["doubleValue"] = avgDO;
+    fields["avgTurbidityNTU"]["doubleValue"] = avgNTU;
+    fields["avgAirTemp"]["doubleValue"] = avgAirT;
+    fields["avgAirHumidity"]["doubleValue"] = avgAirH;
+    fields["count"]["integerValue"] = count;
 
     String payload;
     serializeJson(doc, payload);
@@ -179,12 +191,107 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size) {
     https.addHeader("Authorization", "Bearer " + idToken);
 
     int httpResponseCode = https.sendRequest("PATCH", payload);
-
     if (httpResponseCode == 200) {
-        Serial.println("[Firestore] Batch log pushed.");
+        Serial.println("[Firestore] Batch average log pushed.");
     } else {
-        Serial.print("[Firestore] Batch log push failed: ");
+        Serial.print("[Firestore] Batch avg push failed: ");
         Serial.println(https.errorToString(httpResponseCode));
+        delay(5000);
+        httpResponseCode = https.sendRequest("PATCH", payload);
+        if (httpResponseCode == 200) Serial.println("[Firestore] Batch average log pushed on retry.");
+    }
+
+    https.end();
+}
+
+bool fetchControlCommands() {
+    if (millis() > tokenExpiryTime) refreshIdToken();
+
+    String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/control_commands/" DEVICE_ID;
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient https;
+    https.begin(client, url);
+    https.addHeader("Authorization", "Bearer " + idToken);
+
+    int httpResponseCode = https.GET();
+    if (httpResponseCode != 200) {
+        Serial.print("[Firestore] Fetch control commands failed: ");
+        Serial.println(https.errorToString(httpResponseCode));
+        delay(5000);
+        httpResponseCode = https.GET();
+        if (httpResponseCode != 200) {
+            https.end();
+            return false;
+        }
+    }
+
+    String response = https.getString();
+    https.end();
+
+    StaticJsonDocument<1024> doc;
+    DeserializationError err = deserializeJson(doc, response);
+    if (err) {
+        Serial.print("[Firestore] JSON parse error: ");
+        Serial.println(err.f_str());
+        return false;
+    }
+
+    JsonObject fields = doc["fields"].as<JsonObject>();
+    if (fields.isNull()) return false;
+
+    String mode = fields["mode"]["stringValue"].as<String>();
+    Serial.println(String("[Control] mode=") + mode);
+
+    if (mode == "manual") {
+        JsonObject manual = fields["manualRelayStates"]["mapValue"]["fields"].as<JsonObject>();
+        if (!manual.isNull()) {
+            if (!manual["fan"].isNull())    control_fan(manual["fan"]["booleanValue"].as<bool>());
+            if (!manual["light"].isNull())  control_light(manual["light"]["booleanValue"].as<bool>());
+            if (!manual["pump"].isNull())   control_pump(manual["pump"]["booleanValue"].as<bool>());
+            if (!manual["valve"].isNull())  control_valve(manual["valve"]["booleanValue"].as<bool>());
+            Serial.println("[Control] Applied manual relay states.");
+        }
+        return true; // manual mode handled
+    }
+
+    // auto mode: nothing to apply here; rule engine should take over
+    return false;
+}
+
+void syncRelayState(const RealTimeData &data) {
+    if (millis() > tokenExpiryTime) refreshIdToken();
+
+    String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/live_data/" DEVICE_ID;
+
+    StaticJsonDocument<384> doc;
+    JsonObject fields = doc["fields"].to<JsonObject>();
+    JsonObject relayMap = fields["relayStates"]["mapValue"]["fields"].to<JsonObject>();
+    relayMap["fan"]["booleanValue"] = data.relayStates.fan;
+    relayMap["light"]["booleanValue"] = data.relayStates.light;
+    relayMap["waterPump"]["booleanValue"] = data.relayStates.waterPump;
+    relayMap["valve"]["booleanValue"] = data.relayStates.valve;
+
+    String payload;
+    serializeJson(doc, payload);
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient https;
+    https.begin(client, url);
+    https.addHeader("Content-Type", "application/json");
+    https.addHeader("Authorization", "Bearer " + idToken);
+
+    int httpResponseCode = https.sendRequest("PATCH", payload);
+    if (httpResponseCode == 200) {
+        Serial.println("[Firestore] Relay states synced.");
+    } else {
+        Serial.print("[Firestore] Relay sync failed: ");
+        Serial.println(https.errorToString(httpResponseCode));
+        delay(5000);
+        httpResponseCode = https.sendRequest("PATCH", payload);
+        if (httpResponseCode == 200) Serial.println("[Firestore] Relay states synced on retry.");
     }
 
     https.end();
