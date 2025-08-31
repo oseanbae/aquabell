@@ -5,8 +5,6 @@
 float ph_slope = 0.0;
 float ph_intercept = 0.0;
 
-#include <Arduino.h>
-
 // --- Init ---
 void ph_sensor_init() {
     pinMode(PH_SENSOR_PIN, INPUT);
@@ -50,8 +48,24 @@ float read_ph_voltage_avg() {
 }
 
 // --- Convert voltage to pH ---
-float read_ph() {
+float read_ph(float waterTempC = NAN) {
     float voltage_mV = read_ph_voltage_avg();
-    return ph_slope * voltage_mV + ph_intercept;
+    float ph = ph_slope * voltage_mV + ph_intercept;
+
+    // If water temperature is available, apply Nernst-based compensation
+    if (!isnan(waterTempC)) {
+        // Ideal slope at 25 °C
+        const float SLOPE_25C = 59.16; // mV/pH
+        // Ideal slope at measured temp
+        float slope_T = SLOPE_25C * ((waterTempC + 273.15) / 298.15);
+
+        // Correction factor relative to 25 °C
+        float correction = SLOPE_25C / slope_T;
+
+        // Apply correction
+        ph = (ph - 7.0) * correction + 7.0;
+    }
+
+    return ph;
 }
 

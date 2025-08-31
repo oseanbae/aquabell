@@ -1,0 +1,69 @@
+#include <Arduino.h>
+#include "esp_adc_cal.h"
+
+// === pH Sensor Pin ============
+#define PH_SENSOR_PIN         36        // adjust if you wired to 39
+#define PH_SENSOR_SAMPLES     30
+#define PH_SAMPLE_DELAY_MS    8
+
+// ADC calibration
+static esp_adc_cal_characteristics_t adc_chars;
+
+void setup() {
+    Serial.begin(115200);
+    delay(1000);
+
+    pinMode(PH_SENSOR_PIN, INPUT);
+
+    // ADC setup
+    analogReadResolution(12); // 0–4095
+    analogSetPinAttenuation(PH_SENSOR_PIN, ADC_ATTEN_DB_11);
+
+    // Characterize ADC (1100 mV is default reference for ESP32)
+    esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, &adc_chars);
+
+    Serial.println("=== pH Sensor Calibration Mode ===");
+    Serial.println("Place probe in pH 7 buffer, wait for stable reading, record voltage.");
+    Serial.println("Then place probe in pH 4 buffer, wait for stable reading, record voltage.");
+}
+
+float read_ph_voltage_avg() {
+    float readings[PH_SENSOR_SAMPLES];
+
+    for (int i = 0; i < PH_SENSOR_SAMPLES; i++) {
+        int raw = analogRead(PH_SENSOR_PIN);
+        uint32_t mV = esp_adc_cal_raw_to_voltage(raw, &adc_chars);
+        readings[i] = (float)mV;
+        delay(PH_SAMPLE_DELAY_MS);
+    }
+
+    // Sort (insertion sort for small N)
+    for (int i = 1; i < PH_SENSOR_SAMPLES; i++) {
+        float key = readings[i];
+        int j = i - 1;
+        while (j >= 0 && readings[j] > key) {
+            readings[j + 1] = readings[j];
+            j--;
+        }
+        readings[j + 1] = key;
+    }
+
+    // Trim top/bottom 10% and average
+    int trim = max(1, PH_SENSOR_SAMPLES / 10);
+    float sum = 0.0;
+    int count = 0;
+    for (int i = trim; i < PH_SENSOR_SAMPLES - trim; i++) {
+        sum += readings[i];
+        count++;
+    }
+    if (count == 0) return readings[PH_SENSOR_SAMPLES/2];
+    return sum / count;
+}
+
+void loop() {
+    float voltage_mV = read_ph_voltage_avg();
+    Serial.print("pH Sensor Voltage (mV): ");
+    Serial.println(voltage_mV);
+
+    delay(2000); // update every 2s
+}

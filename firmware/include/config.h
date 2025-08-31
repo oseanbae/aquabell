@@ -10,10 +10,10 @@
 #define DHT_TYPE              11
 
 // === DS18B20 (Water Temp) ===
-#define ONE_WIRE_BUS             4
+#define ONE_WIRE_BUS             25
 
 // === Turbidity =============
-#define TURBIDITY_PIN           34
+#define TURBIDITY_PIN           36
 #define NUM_SAMPLES             10
 #define R1                      10000.0f
 #define R2                      20000.0f
@@ -24,9 +24,9 @@
 
 
 // === pH Sensor =============
-#define PH_SENSOR_PIN         32
-#define PH_SENSOR_SAMPLES     100
-#define PH_SAMPLE_DELAY_MS    20  // Delay between samples (ms)
+#define PH_SENSOR_PIN         39
+#define PH_SENSOR_SAMPLES     30
+#define PH_SAMPLE_DELAY_MS    8  // Delay between samples (ms)
 
 // Calibration points (Two-Point Method)
 #define CAL_PH1               7.0       // First calibration pH value (neutral)
