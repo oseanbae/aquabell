@@ -65,5 +65,17 @@ void loop() {
     Serial.print("pH Sensor Voltage (mV): ");
     Serial.println(voltage_mV);
 
+    /*
+   =================== CALIBRATION GUIDE ===================
+   1. Rinse the pH probe with distilled water, gently blot dry.
+   2. Place probe in **pH 7.00 buffer solution**.
+   3. Wait for reading to stabilize, then record voltage → this is V7.
+   4. Rinse probe, blot dry.
+   5. Place probe in **pH 4.00 buffer solution**.
+   6. Wait for reading to stabilize, then record voltage → this is V4.
+   7. Store V4 and V7 in your config.h file as calibration constants.
+   =========================================================
+  */
+
     delay(2000); // update every 2s
 }

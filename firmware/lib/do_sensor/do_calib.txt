@@ -1,0 +1,50 @@
+#include <Arduino.h>
+
+// === Pin Setup ===
+#define DO_SENSOR_PIN 34       // ESP32 ADC pin for DO sensor
+#define ADC_MAX 4095           // ESP32 = 12-bit ADC
+#define ADC_VOLTAGE_MV 3300.0  // ESP32 reference voltage in mV
+#define DO_SAMPLES 100         // Number of samples for averaging
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(DO_SENSOR_PIN, INPUT);
+  analogReadResolution(12);        // 12-bit ADC
+  analogSetAttenuation(ADC_11db);  // 0–3.3V range
+}
+
+float readDOVoltage() {
+  uint32_t sum = 0;
+  for (int i = 0; i < DO_SAMPLES; i++) {
+    sum += analogRead(DO_SENSOR_PIN);
+    delay(5);
+  }
+  float raw = sum / float(DO_SAMPLES);
+  return (raw * ADC_VOLTAGE_MV) / ADC_MAX; // in mV
+}
+
+void loop() {
+  float voltage = readDOVoltage();
+  Serial.print("DO Sensor Voltage: ");
+  Serial.print(voltage, 2);
+  Serial.println(" mV");
+
+  /*
+   =================== CALIBRATION GUIDE ===================
+   1. Prepare **saturated oxygen water**:
+      - Fill a beaker with distilled water.
+      - Aerate it well using an air pump or stir vigorously for several minutes.
+      - Make sure water is at known calibration temperature (e.g., 25°C).
+   2. Insert DO probe in the water.
+   3. Wait for voltage reading to stabilize, then record it → this is DO_CAL_VOLTAGE.
+   4. Note the water temperature → this is DO_CAL_TEMP.
+   5. Store both values in config.h for your DO calculations.
+   6. (Optional for 2-point calibration):
+      - Prepare a zero-oxygen solution using Sodium Sulfite (Na₂SO₃).
+      - Dip probe in solution, wait for stable reading, record voltage.
+      - Use this as the second calibration point if needed.
+   =========================================================
+  */
+
+  delay(2000);
+}

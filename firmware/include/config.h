@@ -13,7 +13,7 @@
 #define ONE_WIRE_BUS             25
 
 // === Turbidity =============
-#define TURBIDITY_PIN           36
+#define TURBIDITY_PIN           35
 #define NUM_SAMPLES             10
 #define R1                      10000.0f
 #define R2                      20000.0f
@@ -24,7 +24,7 @@
 
 
 // === pH Sensor =============
-#define PH_SENSOR_PIN         39
+#define PH_SENSOR_PIN         36
 #define PH_SENSOR_SAMPLES     30
 #define PH_SAMPLE_DELAY_MS    8  // Delay between samples (ms)
 
@@ -35,13 +35,13 @@
 #define CAL_VOLTAGE2_MV       1555.0    // Voltage at pH 4 (mV)
 
 // === DO Sensor =============
-#define DO_SENSOR_PIN         33
+#define DO_SENSOR_PIN         34
 #define DO_CAL_TEMP           31.37    // °C from your calibration
 #define DO_CAL_VOLTAGE        453.14   // mV from your calibration
 #define DO_SENSOR_SAMPLES     32
 
 // === Float Switch ==========
-#define FLOAT_SWITCH_PIN      35
+#define FLOAT_SWITCH_PIN      32
 #define FLOAT_SWITCH_TRIGGERED LOW
 
 // === SENSOR READ INTERVALS ===
@@ -51,6 +51,11 @@
 #define PH_READ_INTERVAL      30000  // ms
 #define DO_READ_INTERVAL      15000  // ms
 #define FLOAT_READ_INTERVAL       5000  // Avoid high-frequency polling
+
+// === SENSOR AVAILABILITY (for testing) ===
+#define SKIP_PH_SENSOR        true   // Set to true if pH sensor not connected
+#define SKIP_DO_SENSOR        true  // Set to true if DO sensor not connected
+#define SKIP_DHT_SENSOR       true  // Set to true if DHT sensor not connected
 
 // === Relay Control ==========
 #define FAN_RELAY_PIN         19
@@ -82,20 +87,15 @@
 #define LIGHT_EVENING_OFF  MINUTES(18, 0)   // 6:00 PM
 
 
-// === RTC Pins ==============
-#define RTC_SDA               21
-#define RTC_SCL               22
-#define RTC_ADDRESS           0x68
-
 //=== WIFI Configuration ===
 //SHIELA'S WIFI
 // #define WIFI_SSID          "SHIBOL"
 // #define WIFI_PASS      "SPES2025_"
 
 //JP'S WIFI
-// #define WIFI_SSID   "meow"
-// #define WIFI_PASS   "helloworld2025"
+#define WIFI_SSID   "meow"
+#define WIFI_PASS   "helloworld2025"
 
 //Capstone wifi
-#define WIFI_SSID           "Capstone"
-#define WIFI_PASS           "capstone"
+// #define WIFI_SSID           "Capstone"
+// #define WIFI_PASS           "capstone"

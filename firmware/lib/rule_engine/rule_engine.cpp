@@ -3,17 +3,9 @@
 #include "sensor_data.h"
 #include "relay_control.h"
 #include "float_switch.h"
-#include "RTClib.h"
+#include <time.h>
 
 unsigned long (*getMillis)() = millis;
-
-// === Constants ===
-#define BUZZER_ALERT_FREQ       1000
-#define BUZZER_ALERT_DURATION   1000
-#define BUZZER_FLOAT_FREQ       1200
-#define BUZZER_FLOAT_DURATION   500
-#define BUZZER_ACTUATOR_FREQ    2000
-#define BUZZER_ACTUATOR_DURATION 150
 
 #define PUMP_OVERRIDE_DURATION  300000UL
 #define PUMP_OVERRIDE_COOLDOWN   60000UL
@@ -119,58 +111,19 @@ void check_and_control_pump(float waterTemp, bool waterLevelLow) {  // ← FIXED
 }
 
 // === LIGHT LOGIC ===
-void check_and_control_light(DateTime now) {
-    int mins = now.hour() * 60 + now.minute();
+void check_and_control_light(const struct tm& now) {
+    int mins = now.tm_hour * 60 + now.tm_min;
     bool on = (mins >= LIGHT_MORNING_ON && mins < LIGHT_MORNING_OFF) ||
               (mins >= LIGHT_EVENING_ON && mins < LIGHT_EVENING_OFF);
     control_light(on);
 }
 
-// === BUZZER ALERT ===
-void trigger_alert_if_needed(float turbidity, float waterTemp, float pH, float DOmgL) {
-    // ← ADDED: Sensor validation
-    if (isnan(turbidity) || isnan(waterTemp) || isnan(pH) || isnan(DOmgL)) {
-        Serial.println("⚠️ Invalid sensor data for alert checking");
-        return;
-    }
-
-    // ← IMPROVED: More informative alert messages
-    bool alert = false;
-    String alertMessage = "";
-    
-    if (turbidity > 800.0) {
-        alert = true;
-        alertMessage += "High turbidity (" + String(turbidity) + " NTU) ";
-    }
-    if (waterTemp > 32.0) {
-        alert = true;
-        alertMessage += "High water temp (" + String(waterTemp) + "°C) ";
-    }
-    if (pH < 5.5 || pH > 8.5) {
-        alert = true;
-        alertMessage += "Unsafe pH (" + String(pH) + ") ";
-    }
-    if (DOmgL < 3.0) {
-        alert = true;
-        alertMessage += "Low DO (" + String(DOmgL) + " mg/L) ";
-    }
-    
-    if (alert) {
-        Serial.println("🚨 ALERT: " + alertMessage);
-    }
-}
-
 // === MAIN DISPATCH ===
-void apply_rules(const RealTimeData& current, const DateTime& now) {
-    int currentMinutes = now.hour() * 60 + now.minute();
+void apply_rules(const RealTimeData& current, const struct tm& now) {
+    int currentMinutes = now.tm_hour * 60 + now.tm_min;
 
     // ← FIXED: Use data from current instead of calling float_switch_active() twice
     bool waterLevelLow = current.floatTriggered;
-
-    // Alert only once when water level first drops
-    if (current.floatTriggered) {
-        Serial.println("💧 Float switch triggered — low water level");
-    }
 
     // Fan control
     check_climate_and_control_fan(current.airTemp, current.airHumidity, currentMinutes);
@@ -181,11 +134,19 @@ void apply_rules(const RealTimeData& current, const DateTime& now) {
     // Light control
     check_and_control_light(now);
 
-    // Safety alerts
-    trigger_alert_if_needed(
-        current.turbidityNTU,
-        current.waterTemp,
-        current.pH,
-        current.dissolvedOxygen
-    );
+}
+
+// === EMERGENCY RULES (when time is not available) ===
+void apply_emergency_rules(const RealTimeData& current) {
+    // Only apply critical safety rules that don't require time
+    bool waterLevelLow = current.floatTriggered;
+
+    // Emergency pump control (float switch safety only)
+    if (waterLevelLow) {
+        control_pump(false);    // Always force OFF if water is low
+        control_valve(true);    // Start refill valve
+        Serial.println("🚰 Emergency refill active — water level low");
+    } else {
+        control_valve(false);   // Stop refill if water level is OK
+    }
 }

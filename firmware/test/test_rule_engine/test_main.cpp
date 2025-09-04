@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <unity.h>
+#include <time.h>
 
 #include "rule_engine.cpp"  // INCLUDE THE FULL IMPLEMENTATION
 #include "sensor_data.h"
@@ -56,16 +57,21 @@ void test_pump_schedule_cycle() {
 
 // --- TEST: Light ON/OFF Schedules ---
 void test_light_schedule_logic() {
-    // Light ON in morning window
-    DateTime fakeNow(2024, 7, 29, 6, 0, 0);
+    struct tm fakeNow;
+    
+    // Light ON in morning window (6:00 AM)
+    fakeNow.tm_hour = 6;
+    fakeNow.tm_min = 0;
     check_and_control_light(fakeNow);
 
-    // Light OFF at noon
-    fakeNow = DateTime(2024, 7, 29, 12, 0, 0);
+    // Light OFF at noon (12:00 PM)
+    fakeNow.tm_hour = 12;
+    fakeNow.tm_min = 0;
     check_and_control_light(fakeNow);
 
-    // Light ON in evening window
-    fakeNow = DateTime(2024, 7, 29, 15, 30, 0);
+    // Light ON in evening window (3:30 PM)
+    fakeNow.tm_hour = 15;
+    fakeNow.tm_min = 30;
     check_and_control_light(fakeNow);
 }
 
@@ -95,7 +101,9 @@ void test_sensor_alert_trigger() {
     testData.pH = 7.0;
     testData.dissolvedOxygen = 5.0;
 
-    DateTime fakeNow(2024, 7, 29, 10, 0, 0);
+    struct tm fakeNow;
+    fakeNow.tm_hour = 10;
+    fakeNow.tm_min = 0;
     apply_rules(testData, fakeNow);
 
     // Case 2: Low pH (<5.5)
@@ -120,12 +128,16 @@ void test_full_schedule_scenario() {
     testData.turbidityNTU = 100.0f;
     testData.floatTriggered = false;
 
+    struct tm fakeNow;
+    
     // 5:30 AM - Light should turn ON
-    DateTime fakeNow(2024, 7, 29, 5, 30, 0);
+    fakeNow.tm_hour = 5;
+    fakeNow.tm_min = 30;
     apply_rules(testData, fakeNow);
 
     // 10:00 AM - Fan turns ON (high temp/humidity)
-    fakeNow = DateTime(2024, 7, 29, 10, 0, 0);
+    fakeNow.tm_hour = 10;
+    fakeNow.tm_min = 0;
     mockMillis = 0;
     apply_rules(testData, fakeNow);
 
@@ -134,7 +146,8 @@ void test_full_schedule_scenario() {
     apply_rules(testData, fakeNow);
 
     // 3:00 PM - Evening lights ON
-    fakeNow = DateTime(2024, 7, 29, 15, 0, 0);
+    fakeNow.tm_hour = 15;
+    fakeNow.tm_min = 0;
     apply_rules(testData, fakeNow);
 }
 

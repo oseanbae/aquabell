@@ -4,8 +4,9 @@
 #include <ArduinoJson.h>
 #include "config.h"
 #include "sensor_data.h"
-#include "RTClib.h"
 #include "relay_control.h"
+#include "time_utils.h"
+#include <time.h>
 
 #define FIREBASE_PROJECT_ID "aquabell-cap2025"
 #define DEVICE_ID "aquabell_esp32"
@@ -89,18 +90,21 @@ void refreshIdToken() {
 
 void pushToFirestoreLive(const RealTimeData &data) {
     if (millis() > tokenExpiryTime) refreshIdToken();
+    
+
 
     String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/live_data/" DEVICE_ID;
 
-    StaticJsonDocument<768> doc; // compact live payload
+    JsonDocument doc; // compact live payload
     JsonObject fields = doc["fields"].to<JsonObject>();
 
-    fields["waterTemp"]["doubleValue"] = data.waterTemp;
-    fields["pH"]["doubleValue"] = data.pH;
-    fields["dissolvedOxygen"]["doubleValue"] = data.dissolvedOxygen;
-    fields["turbidityNTU"]["doubleValue"] = data.turbidityNTU;
-    fields["airTemp"]["doubleValue"] = data.airTemp;
-    fields["airHumidity"]["doubleValue"] = data.airHumidity;
+    // Validate data before sending to Firestore
+    if (!isnan(data.waterTemp)) fields["waterTemp"]["doubleValue"] = data.waterTemp;
+    if (!isnan(data.pH)) fields["pH"]["doubleValue"] = data.pH;
+    if (!isnan(data.dissolvedOxygen)) fields["dissolvedOxygen"]["doubleValue"] = data.dissolvedOxygen;
+    if (!isnan(data.turbidityNTU)) fields["turbidityNTU"]["doubleValue"] = data.turbidityNTU;
+    if (!isnan(data.airTemp)) fields["airTemp"]["doubleValue"] = data.airTemp;
+    if (!isnan(data.airHumidity)) fields["airHumidity"]["doubleValue"] = data.airHumidity;
     fields["floatTriggered"]["booleanValue"] = data.floatTriggered;
 
     // Relay States as Map
@@ -124,20 +128,20 @@ void pushToFirestoreLive(const RealTimeData &data) {
     int httpResponseCode = https.sendRequest("PATCH", payload);
 
     if (httpResponseCode == 200) {
+        // Success - no need to print every update
         Serial.println("[Firestore] Live data updated.");
     } else {
-        Serial.print("[Firestore] Live data update failed: ");
-        Serial.println(https.errorToString(httpResponseCode));
+        Serial.printf("[Firestore] Update failed: %s\n", https.errorToString(httpResponseCode).c_str());
         delay(5000);
         httpResponseCode = https.sendRequest("PATCH", payload);
-        if (httpResponseCode == 200) Serial.println("[Firestore] Live data updated on retry.");
+        if (httpResponseCode == 200) Serial.println("[Firestore] ✅ Retry successful");
     }
 
     https.end();
 }
 
 
-void pushBatchLogToFirestore(RealTimeData *buffer, int size, const DateTime& now) {
+void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
     if (millis() > tokenExpiryTime) refreshIdToken();
 
     if (size <= 0) return;
@@ -162,15 +166,22 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size, const DateTime& now
     float avgAirT = count ? (float)(sumAirT / count) : 0;
     float avgAirH = count ? (float)(sumAirH / count) : 0;
 
-    char dateStr[11];  // YYYY-MM-DD
-    snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", now.year(), now.month(), now.day());
-    String timestamp = String(now.unixtime());
+    // Format date string from timestamp
+    struct tm timeinfo;
+    char dateStr[11];  // YYYY-MM-DD + null terminator
+    if (localtime_r(&timestamp, &timeinfo)) {
+        strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", &timeinfo);
+    } else {
+        strcpy(dateStr, "1970-01-01"); // Fallback
+    }
+    
+    String timestampStr = String(timestamp);
 
-    String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/sensor_logs/" + String(dateStr) + "_" + timestamp;
+    String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/sensor_logs/" + String(dateStr) + "_" + timestampStr;
 
-    StaticJsonDocument<512> doc; // compact averaged payload
+    JsonDocument doc; // compact averaged payload
     JsonObject fields = doc["fields"].to<JsonObject>();
-    fields["timestamp"]["integerValue"] = (long long)now.unixtime();
+    fields["timestamp"]["integerValue"] = (long long)timestamp;
     fields["avgWaterTemp"]["doubleValue"] = avgWater;
     fields["avgPH"]["doubleValue"] = avgPH;
     fields["avgDO"]["doubleValue"] = avgDO;
@@ -192,13 +203,12 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size, const DateTime& now
 
     int httpResponseCode = https.sendRequest("PATCH", payload);
     if (httpResponseCode == 200) {
-        Serial.println("[Firestore] Batch average log pushed.");
+        // Success - no need to print every batch update
     } else {
-        Serial.print("[Firestore] Batch avg push failed: ");
-        Serial.println(https.errorToString(httpResponseCode));
+        Serial.printf("[Firestore] Batch failed: %s\n", https.errorToString(httpResponseCode).c_str());
         delay(5000);
         httpResponseCode = https.sendRequest("PATCH", payload);
-        if (httpResponseCode == 200) Serial.println("[Firestore] Batch average log pushed on retry.");
+        if (httpResponseCode == 200) Serial.println("[Firestore] ✅ Batch retry successful");
     }
 
     https.end();
@@ -230,7 +240,7 @@ bool fetchControlCommands() {
     String response = https.getString();
     https.end();
 
-    StaticJsonDocument<1024> doc;
+    JsonDocument doc;
     DeserializationError err = deserializeJson(doc, response);
     if (err) {
         Serial.print("[Firestore] JSON parse error: ");
@@ -265,7 +275,7 @@ void syncRelayState(const RealTimeData &data) {
 
     String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/live_data/" DEVICE_ID;
 
-    StaticJsonDocument<384> doc;
+    JsonDocument doc;
     JsonObject fields = doc["fields"].to<JsonObject>();
     JsonObject relayMap = fields["relayStates"]["mapValue"]["fields"].to<JsonObject>();
     relayMap["fan"]["booleanValue"] = data.relayStates.fan;
@@ -285,13 +295,12 @@ void syncRelayState(const RealTimeData &data) {
 
     int httpResponseCode = https.sendRequest("PATCH", payload);
     if (httpResponseCode == 200) {
-        Serial.println("[Firestore] Relay states synced.");
+        Serial.println("[Firestore] Live data updated.");
     } else {
-        Serial.print("[Firestore] Relay sync failed: ");
-        Serial.println(https.errorToString(httpResponseCode));
+        Serial.printf("[Firestore] Relay sync failed: %s\n", https.errorToString(httpResponseCode).c_str());
         delay(5000);
         httpResponseCode = https.sendRequest("PATCH", payload);
-        if (httpResponseCode == 200) Serial.println("[Firestore] Relay states synced on retry.");
+        if (httpResponseCode == 200) Serial.println("[Firestore] ✅ Relay retry successful");
     }
 
     https.end();
