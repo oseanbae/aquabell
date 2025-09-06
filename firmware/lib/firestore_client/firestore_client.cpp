@@ -107,13 +107,6 @@ void pushToFirestoreLive(const RealTimeData &data) {
     if (!isnan(data.airHumidity)) fields["airHumidity"]["doubleValue"] = data.airHumidity;
     fields["floatTriggered"]["booleanValue"] = data.floatTriggered;
 
-    // Relay States as Map
-    JsonObject relayMap = fields["relayStates"]["mapValue"]["fields"].to<JsonObject>();
-    relayMap["fan"]["booleanValue"] = data.relayStates.fan;
-    relayMap["light"]["booleanValue"] = data.relayStates.light;
-    relayMap["waterPump"]["booleanValue"] = data.relayStates.waterPump;
-    relayMap["valve"]["booleanValue"] = data.relayStates.valve;
-
     String payload;
     serializeJson(doc, payload);
 
@@ -203,7 +196,7 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
 
     int httpResponseCode = https.sendRequest("PATCH", payload);
     if (httpResponseCode == 200) {
-        // Success - no need to print every batch update
+        Serial1.println("[Firestore] Batch log updated.");
     } else {
         Serial.printf("[Firestore] Batch failed: %s\n", https.errorToString(httpResponseCode).c_str());
         delay(5000);
@@ -217,17 +210,16 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
 bool fetchControlCommands() {
     if (millis() > tokenExpiryTime) refreshIdToken();
 
-    String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/control_commands/" DEVICE_ID;
+    String url = "https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app/commands/" DEVICE_ID ".json?auth=" + idToken;
 
     WiFiClientSecure client;
     client.setInsecure();
     HTTPClient https;
     https.begin(client, url);
-    https.addHeader("Authorization", "Bearer " + idToken);
 
     int httpResponseCode = https.GET();
     if (httpResponseCode != 200) {
-        Serial.print("[Firestore] Fetch control commands failed: ");
+        Serial.print("[RTDB] Fetch control commands failed: ");
         Serial.println(https.errorToString(httpResponseCode));
         delay(5000);
         httpResponseCode = https.GET();
@@ -243,45 +235,58 @@ bool fetchControlCommands() {
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, response);
     if (err) {
-        Serial.print("[Firestore] JSON parse error: ");
+        Serial.print("[RTDB] JSON parse error: ");
         Serial.println(err.f_str());
         return false;
     }
 
-    JsonObject fields = doc["fields"].as<JsonObject>();
-    if (fields.isNull()) return false;
+    if (doc.isNull()) return false;
 
-    String mode = fields["mode"]["stringValue"].as<String>();
-    Serial.println(String("[Control] mode=") + mode);
+    bool anyManualControl = false;
 
-    if (mode == "manual") {
-        JsonObject manual = fields["manualRelayStates"]["mapValue"]["fields"].as<JsonObject>();
-        if (!manual.isNull()) {
-            if (!manual["fan"].isNull())    control_fan(manual["fan"]["booleanValue"].as<bool>());
-            if (!manual["light"].isNull())  control_light(manual["light"]["booleanValue"].as<bool>());
-            if (!manual["pump"].isNull())   control_pump(manual["pump"]["booleanValue"].as<bool>());
-            if (!manual["valve"].isNull())  control_valve(manual["valve"]["booleanValue"].as<bool>());
-            Serial.println("[Control] Applied manual relay states.");
+    // Check each actuator individually
+    const char* actuators[] = {"fan", "light", "pump", "valve"};
+    void (*controlFunctions[])(bool) = {control_fan, control_light, control_pump, control_valve};
+
+    for (int i = 0; i < 4; i++) {
+        const char* actuator = actuators[i];
+        
+        if (!doc[actuator].isNull()) {
+            JsonObject actuatorData = doc[actuator].as<JsonObject>();
+            if (!actuatorData.isNull()) {
+                bool isAuto = actuatorData["isAuto"].as<bool>();
+                bool value = actuatorData["value"].as<bool>();
+                
+                Serial.println(String("[Control] ") + actuator + " isAuto=" + (isAuto ? "true" : "false") + " value=" + (value ? "true" : "false"));
+                
+                if (!isAuto) { // Manual mode when isAuto is false
+                    controlFunctions[i](value);
+                    anyManualControl = true;
+                    Serial.println(String("[Control] Applied manual control for ") + actuator);
+                }
+            }
         }
-        return true; // manual mode handled
     }
 
-    // auto mode: nothing to apply here; rule engine should take over
+    if (anyManualControl) {
+        Serial.println("[Control] Applied manual relay states.");
+        return true; // manual control was applied
+    }
+
+    // No manual controls found, rule engine should take over
     return false;
 }
 
 void syncRelayState(const RealTimeData &data) {
     if (millis() > tokenExpiryTime) refreshIdToken();
 
-    String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/live_data/" DEVICE_ID;
+    String url = "https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app/commands/" DEVICE_ID ".json?auth=" + idToken;
 
     JsonDocument doc;
-    JsonObject fields = doc["fields"].to<JsonObject>();
-    JsonObject relayMap = fields["relayStates"]["mapValue"]["fields"].to<JsonObject>();
-    relayMap["fan"]["booleanValue"] = data.relayStates.fan;
-    relayMap["light"]["booleanValue"] = data.relayStates.light;
-    relayMap["waterPump"]["booleanValue"] = data.relayStates.waterPump;
-    relayMap["valve"]["booleanValue"] = data.relayStates.valve;
+    doc["fan"]["value"] = data.relayStates.fan;
+    doc["light"]["value"] = data.relayStates.light;
+    doc["pump"]["value"] = data.relayStates.waterPump;
+    doc["valve"]["value"] = data.relayStates.valve;
 
     String payload;
     serializeJson(doc, payload);
@@ -291,16 +296,15 @@ void syncRelayState(const RealTimeData &data) {
     HTTPClient https;
     https.begin(client, url);
     https.addHeader("Content-Type", "application/json");
-    https.addHeader("Authorization", "Bearer " + idToken);
 
     int httpResponseCode = https.sendRequest("PATCH", payload);
     if (httpResponseCode == 200) {
-        Serial.println("[Firestore] Live data updated.");
+        Serial1.println("[RTDB] Relay sync updated.");
     } else {
-        Serial.printf("[Firestore] Relay sync failed: %s\n", https.errorToString(httpResponseCode).c_str());
+        Serial.printf("[RTDB] Relay sync failed: %s\n", https.errorToString(httpResponseCode).c_str());
         delay(5000);
         httpResponseCode = https.sendRequest("PATCH", payload);
-        if (httpResponseCode == 200) Serial.println("[Firestore] ✅ Relay retry successful");
+        if (httpResponseCode == 200) Serial.println("[RTDB] ✅ Relay retry successful");
     }
 
     https.end();

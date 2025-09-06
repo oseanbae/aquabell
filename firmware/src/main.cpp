@@ -82,15 +82,6 @@ void setup() {
 
     initAllModules();
     
-    // Initialize sensor data with safe defaults
-    current.waterTemp = 25.0f;
-    current.pH = 7.0f;
-    current.dissolvedOxygen = 8.0f;
-    current.turbidityNTU = 100.0f;
-    current.airTemp = 25.0f;
-    current.airHumidity = 60.0f;
-    current.floatTriggered = false;
-    
     Serial.println("✅ System initialization complete.");
 }
 
@@ -138,22 +129,27 @@ void loop() {
     static int logIndex = 0;
 
     if (WiFi.status() == WL_CONNECTED) {
+        // Live push stays at a fixed 10s interval (for the app UI)
         if (nowMillis - lastLiveUpdate >= liveInterval) {
             pushToFirestoreLive(current);
-            logBuffer[logIndex++] = current;
             lastLiveUpdate = nowMillis;
         }
 
-            if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
-        time_t timestamp = getUnixTime();
-        if (timestamp > 0) {
-            pushBatchLogToFirestore(logBuffer, logIndex, timestamp);
+        // Append to logBuffer only when fresh sensor data is available
+        if (updated) {  
+            logBuffer[logIndex++] = current;
         }
-        logIndex = 0;
-        lastBatchLog = nowMillis;
-    }
-    }
 
+        // Every 10 min OR if buffer is full → push batch
+        if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
+            time_t timestamp = getUnixTime();
+            if (timestamp > 0) {
+                pushBatchLogToFirestore(logBuffer, logIndex, timestamp);
+            }
+            logIndex = 0;
+            lastBatchLog = nowMillis;
+        }
+    }
     yield();
 }
 
