@@ -45,17 +45,13 @@
 #define FLOAT_SWITCH_TRIGGERED LOW
 
 // === SENSOR READ INTERVALS ===
-#define DHT_READ_INTERVAL     60000  // ms
-#define DS18B20_READ_INTERVAL 60000  // ms
-#define TURBIDITY_READ_INTERVAL 10000  // ms
-#define PH_READ_INTERVAL      30000  // ms
-#define DO_READ_INTERVAL      15000  // ms
-#define FLOAT_READ_INTERVAL       5000  // Avoid high-frequency polling
-
-// === SENSOR AVAILABILITY (for testing) ===
-#define SKIP_PH_SENSOR        true   // Set to true if pH sensor not connected
-#define SKIP_DO_SENSOR        true  // Set to true if DO sensor not connected
-#define SKIP_DHT_SENSOR       true  // Set to true if DHT sensor not connected
+#define UNIFIED_SENSOR_INTERVAL 10000  // ms - All sensors read every 10 seconds
+#define DHT_READ_INTERVAL     UNIFIED_SENSOR_INTERVAL
+#define DS18B20_READ_INTERVAL UNIFIED_SENSOR_INTERVAL
+#define TURBIDITY_READ_INTERVAL UNIFIED_SENSOR_INTERVAL
+#define PH_READ_INTERVAL      UNIFIED_SENSOR_INTERVAL
+#define DO_READ_INTERVAL      UNIFIED_SENSOR_INTERVAL
+#define FLOAT_READ_INTERVAL   UNIFIED_SENSOR_INTERVAL
 
 // === Relay Control ==========
 #define FAN_RELAY_PIN         19
@@ -93,9 +89,13 @@
 // #define WIFI_PASS      "SPES2025_"
 
 //JP'S WIFI
-#define WIFI_SSID   "meow"
-#define WIFI_PASS   "helloworld2025"
+// #define WIFI_SSID   "meow"
+// #define WIFI_PASS   "helloworld2025"
 
 //Capstone wifi
 // #define WIFI_SSID           "Capstone"
 // #define WIFI_PASS           "capstone"
+
+//IPEN WIFI
+#define WIFI_SSID           "Ipen"
+#define WIFI_PASS           "precious1965"
