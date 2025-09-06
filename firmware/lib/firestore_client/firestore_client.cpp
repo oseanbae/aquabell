@@ -6,6 +6,7 @@
 #include "sensor_data.h"
 #include "relay_control.h"
 #include "time_utils.h"
+#include "firestore_client.h"
 #include <time.h>
 
 #define FIREBASE_PROJECT_ID "aquabell-cap2025"
@@ -275,6 +276,103 @@ bool fetchControlCommands() {
 
     // No manual controls found, rule engine should take over
     return false;
+}
+
+bool fetchCommandsFromRTDB(Commands& commands) {
+    if (millis() > tokenExpiryTime) refreshIdToken();
+
+    String url = "https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app/commands/" DEVICE_ID ".json?auth=" + idToken;
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient https;
+    https.begin(client, url);
+
+    int httpResponseCode = https.GET();
+    if (httpResponseCode != 200) {
+        Serial.printf("[RTDB] Failed to fetch commands: %s\n", https.errorToString(httpResponseCode).c_str());
+        https.end();
+        return false;
+    }
+
+    String response = https.getString();
+    https.end();
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, response);
+    if (err) {
+        Serial.print("[RTDB] JSON parse error: ");
+        Serial.println(err.f_str());
+        return false;
+    }
+
+    if (doc.isNull()) {
+        Serial.println("[RTDB] No command data received");
+        return false;
+    }
+
+    // Store previous values for change detection
+    static Commands previousCommands = {};
+    bool hasChanges = false;
+
+    // Parse and check for changes
+    if (!doc["fan"].isNull()) {
+        bool newIsAuto = doc["fan"]["isAuto"].as<bool>();
+        bool newValue = doc["fan"]["value"].as<bool>();
+        
+        if (previousCommands.fan.isAuto != newIsAuto || previousCommands.fan.value != newValue) {
+            commands.fan.isAuto = newIsAuto;
+            commands.fan.value = newValue;
+            previousCommands.fan = commands.fan;
+            hasChanges = true;
+            Serial.printf("🔄 Fan command changed: isAuto=%s, value=%s\n", 
+                        newIsAuto ? "true" : "false", newValue ? "true" : "false");
+        }
+    }
+
+    if (!doc["light"].isNull()) {
+        bool newIsAuto = doc["light"]["isAuto"].as<bool>();
+        bool newValue = doc["light"]["value"].as<bool>();
+        
+        if (previousCommands.light.isAuto != newIsAuto || previousCommands.light.value != newValue) {
+            commands.light.isAuto = newIsAuto;
+            commands.light.value = newValue;
+            previousCommands.light = commands.light;
+            hasChanges = true;
+            Serial.printf("💡 Light command changed: isAuto=%s, value=%s\n", 
+                        newIsAuto ? "true" : "false", newValue ? "true" : "false");
+        }
+    }
+
+    if (!doc["pump"].isNull()) {
+        bool newIsAuto = doc["pump"]["isAuto"].as<bool>();
+        bool newValue = doc["pump"]["value"].as<bool>();
+        
+        if (previousCommands.pump.isAuto != newIsAuto || previousCommands.pump.value != newValue) {
+            commands.pump.isAuto = newIsAuto;
+            commands.pump.value = newValue;
+            previousCommands.pump = commands.pump;
+            hasChanges = true;
+            Serial.printf("🔄 Pump command changed: isAuto=%s, value=%s\n", 
+                        newIsAuto ? "true" : "false", newValue ? "true" : "false");
+        }
+    }
+
+    if (!doc["valve"].isNull()) {
+        bool newIsAuto = doc["valve"]["isAuto"].as<bool>();
+        bool newValue = doc["valve"]["value"].as<bool>();
+        
+        if (previousCommands.valve.isAuto != newIsAuto || previousCommands.valve.value != newValue) {
+            commands.valve.isAuto = newIsAuto;
+            commands.valve.value = newValue;
+            previousCommands.valve = commands.valve;
+            hasChanges = true;
+            Serial.printf("🚰 Valve command changed: isAuto=%s, value=%s\n", 
+                        newIsAuto ? "true" : "false", newValue ? "true" : "false");
+        }
+    }
+
+    return hasChanges;
 }
 
 void syncRelayState(const RealTimeData &data) {

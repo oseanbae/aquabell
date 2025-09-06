@@ -3,36 +3,13 @@
 #include "sensor_data.h"
 #include "relay_control.h"
 #include "float_switch.h"
+#include "firestore_client.h"
 #include <time.h>
-#include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
 
 unsigned long (*getMillis)() = millis;
 
 #define PUMP_OVERRIDE_DURATION  300000UL
 #define PUMP_OVERRIDE_COOLDOWN   60000UL
-
-// RTDB Configuration
-#define RTDB_URL "https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app"
-#define DEVICE_ID "aquabell_esp32"
-
-// External token from firestore_client
-extern String idToken;
-
-// Relay state structure for RTDB
-struct RelayState {
-    bool isAuto;
-    bool value;
-};
-
-struct RelayStates {
-    RelayState fan;
-    RelayState light;
-    RelayState pump;
-    RelayState valve;
-};
 
 // === State Tracking ===
 static bool fanActive = false;
@@ -47,66 +24,9 @@ inline unsigned long millis_elapsed(unsigned long now, unsigned long since) {
     return (unsigned long)(now - since);
 }
 
-// === RTDB Functions ===
-bool fetchRelayStates(RelayStates& states) {
-    if (idToken == "") {
-        Serial.println("[RTDB] No auth token available");
-        return false;
-    }
-
-    String url = String(RTDB_URL) + "/commands/" DEVICE_ID ".json?auth=" + idToken;
-
-    WiFiClientSecure client;
-    client.setInsecure();
-    HTTPClient https;
-    https.begin(client, url);
-
-    int httpResponseCode = https.GET();
-    if (httpResponseCode != 200) {
-        Serial.printf("[RTDB] Failed to fetch relay states: %s\n", https.errorToString(httpResponseCode).c_str());
-        https.end();
-        return false;
-    }
-
-    String response = https.getString();
-    https.end();
-
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, response);
-    if (err) {
-        Serial.print("[RTDB] JSON parse error: ");
-        Serial.println(err.f_str());
-        return false;
-    }
-
-    if (doc.isNull()) {
-        Serial.println("[RTDB] No data received");
-        return false;
-    }
-
-    // Parse relay states
-    if (!doc["fan"].isNull()) {
-        states.fan.isAuto = doc["fan"]["isAuto"].as<bool>();
-        states.fan.value = doc["fan"]["value"].as<bool>();
-    }
-    if (!doc["light"].isNull()) {
-        states.light.isAuto = doc["light"]["isAuto"].as<bool>();
-        states.light.value = doc["light"]["value"].as<bool>();
-    }
-    if (!doc["pump"].isNull()) {
-        states.pump.isAuto = doc["pump"]["isAuto"].as<bool>();
-        states.pump.value = doc["pump"]["value"].as<bool>();
-    }
-    if (!doc["valve"].isNull()) {
-        states.valve.isAuto = doc["valve"]["isAuto"].as<bool>();
-        states.valve.value = doc["valve"]["value"].as<bool>();
-    }
-
-    return true;
-}
 
 // === FAN LOGIC ===
-void check_climate_and_control_fan(float airTemp, float humidity, int currentMinutes, const RelayState& fanState) {
+void check_climate_and_control_fan(float airTemp, float humidity, int currentMinutes, const CommandState& fanCommand) {
     // ← ADDED: Sensor validation
     if (isnan(airTemp) || isnan(humidity)) {
         Serial.println("⚠️ Invalid sensor data for fan control");
@@ -114,9 +34,9 @@ void check_climate_and_control_fan(float airTemp, float humidity, int currentMin
     }
 
     // Check if fan is in manual mode
-    if (!fanState.isAuto) {
-        control_fan(fanState.value);
-        Serial.printf("🌀 Fan MANUAL — Value: %s\n", fanState.value ? "ON" : "OFF");
+    if (!fanCommand.isAuto) {
+        control_fan(fanCommand.value);
+        Serial.printf("🌀 Fan MANUAL — Value: %s\n", fanCommand.value ? "ON" : "OFF");
         return;
     }
 
@@ -150,7 +70,7 @@ void check_climate_and_control_fan(float airTemp, float humidity, int currentMin
 }
 
 // === PUMP LOGIC WITH FLOAT SWITCH ===
-void check_and_control_pump(float waterTemp, bool waterLevelLow, const RelayState& pumpState) {
+void check_and_control_pump(float waterTemp, bool waterLevelLow, const CommandState& pumpCommand) {
     // ← ADDED: Sensor validation
     if (isnan(waterTemp)) {
         Serial.println("⚠️ Invalid water temperature for pump control");
@@ -158,9 +78,9 @@ void check_and_control_pump(float waterTemp, bool waterLevelLow, const RelayStat
     }
 
     // Check if pump is in manual mode
-    if (!pumpState.isAuto) {
-        control_pump(pumpState.value);
-        Serial.printf("🔄 Pump MANUAL — Value: %s\n", pumpState.value ? "ON" : "OFF");
+    if (!pumpCommand.isAuto) {
+        control_pump(pumpCommand.value);
+        Serial.printf("🔄 Pump MANUAL — Value: %s\n", pumpCommand.value ? "ON" : "OFF");
         return;
     }
 
@@ -206,11 +126,11 @@ void check_and_control_pump(float waterTemp, bool waterLevelLow, const RelayStat
 }
 
 // === LIGHT LOGIC ===
-void check_and_control_light(const struct tm& now, const RelayState& lightState) {
+void check_and_control_light(const struct tm& now, const CommandState& lightCommand) {
     // Check if light is in manual mode
-    if (!lightState.isAuto) {
-        control_light(lightState.value);
-        Serial.printf("💡 Light MANUAL — Value: %s\n", lightState.value ? "ON" : "OFF");
+    if (!lightCommand.isAuto) {
+        control_light(lightCommand.value);
+        Serial.printf("💡 Light MANUAL — Value: %s\n", lightCommand.value ? "ON" : "OFF");
         return;
     }
 
@@ -223,11 +143,11 @@ void check_and_control_light(const struct tm& now, const RelayState& lightState)
 }
 
 // === VALVE LOGIC ===
-void check_and_control_valve(bool waterLevelLow, const RelayState& valveState) {
+void check_and_control_valve(bool waterLevelLow, const CommandState& valveCommand) {
     // Check if valve is in manual mode
-    if (!valveState.isAuto) {
-        control_valve(valveState.value);
-        Serial.printf("🚰 Valve MANUAL — Value: %s\n", valveState.value ? "ON" : "OFF");
+    if (!valveCommand.isAuto) {
+        control_valve(valveCommand.value);
+        Serial.printf("🚰 Valve MANUAL — Value: %s\n", valveCommand.value ? "ON" : "OFF");
         return;
     }
 
@@ -257,29 +177,21 @@ void apply_emergency_rules(const RealTimeData& current) {
 }
 
 // === MAIN DISPATCH ===
-void apply_rules(const RealTimeData& current, const struct tm& now) {
+void apply_rules(const RealTimeData& current, const struct tm& now, const Commands& commands) {
     int currentMinutes = now.tm_hour * 60 + now.tm_min;
 
     // ← FIXED: Use data from current instead of calling float_switch_active() twice
     bool waterLevelLow = current.floatTriggered;
 
-    // Fetch relay states from RTDB
-    RelayStates relayStates;
-    if (!fetchRelayStates(relayStates)) {
-        Serial.println("⚠️ Failed to fetch relay states, using emergency rules");
-        apply_emergency_rules(current);
-        return;
-    }
-
     // Fan control
-    check_climate_and_control_fan(current.airTemp, current.airHumidity, currentMinutes, relayStates.fan);
+    check_climate_and_control_fan(current.airTemp, current.airHumidity, currentMinutes, commands.fan);
 
     // Pump control
-    check_and_control_pump(current.waterTemp, waterLevelLow, relayStates.pump);
+    check_and_control_pump(current.waterTemp, waterLevelLow, commands.pump);
 
     // Light control
-    check_and_control_light(now, relayStates.light);
+    check_and_control_light(now, commands.light);
 
     // Valve control
-    check_and_control_valve(waterLevelLow, relayStates.valve);
+    check_and_control_valve(waterLevelLow, commands.valve);
 }

@@ -15,8 +15,10 @@
 
 // === CONSTANTS ===
 #define USE_MOCK_DATA true
+#define RTDB_POLL_INTERVAL 1000  // Poll RTDB every 1 second
 
 RealTimeData current = {}; // Initialize all fields to 0/false
+Commands currentCommands = {}; // Initialize all command fields to 0/false
 
 // === FORWARD DECLARATIONS ===
 void initAllModules();
@@ -102,16 +104,25 @@ void loop() {
     // Periodic time sync (every 24 hours when WiFi is available)
     periodicTimeSync();
 
-    // Read all sensors every 10 seconds
-    bool updated = readSensors(nowMillis, current);
+    // Poll RTDB commands every 1 second for real-time control
+    static unsigned long lastRTDBPoll = 0;
+    bool commandsChanged = false;
     
-    // Apply rules when sensors are updated or float switch changes
-    if (updated || is_float_switch_triggered()) {
+    if (WiFi.status() == WL_CONNECTED && nowMillis - lastRTDBPoll >= RTDB_POLL_INTERVAL) {
+        commandsChanged = fetchCommandsFromRTDB(currentCommands);
+        lastRTDBPoll = nowMillis;
+    }
+    
+    // Read all sensors every 10 seconds
+    bool sensorsUpdated = readSensors(nowMillis, current);
+    
+    // Apply rules when sensors are updated, commands change, or float switch changes
+    if (sensorsUpdated || commandsChanged || is_float_switch_triggered()) {
         // Only apply time-dependent rules if time is available
         if (isTimeAvailable()) {
             struct tm timeinfo;
             if (getLocalTm(timeinfo)) {
-                apply_rules(current, timeinfo);
+                apply_rules(current, timeinfo, currentCommands);
             }
         } else {
             // Apply emergency rules only (float switch, basic safety)
@@ -136,7 +147,7 @@ void loop() {
         }
 
         // Append to logBuffer only when fresh sensor data is available
-        if (updated) {  
+        if (sensorsUpdated) {  
             logBuffer[logIndex++] = current;
         }
 
