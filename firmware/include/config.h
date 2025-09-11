@@ -82,7 +82,7 @@
 // #define WIFI_SSID          "SHIBOL"
 // #define WIFI_PASS      "SPES2025_"
 
-//JP'S WIFI
+//JP'S HOME WIFI
 // #define WIFI_SSID   "meow"
 // #define WIFI_PASS   "helloworld2025"
 
@@ -91,5 +91,9 @@
 // #define WIFI_PASS           "capstone"
 
 //IPEN WIFI
-#define WIFI_SSID           "Ipen"
-#define WIFI_PASS           "precious1965"
+// #define WIFI_SSID           "Ipen"
+// #define WIFI_PASS           "precious1965"
+
+//JP's PHONE HOTSPOT
+#define WIFI_SSID           "jp"
+#define WIFI_PASS           "11223344"

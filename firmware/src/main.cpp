@@ -212,7 +212,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     } else {
         static unsigned long lastPHError = 0;
         if (now - lastPHError >= 60000) { // Log error only once per minute
-            Serial.println("⚠️ Invalid pH (sensor may not be connected)");
+            Serial.println("⚠️ Invalid pH");
             lastPHError = now;
         }
     }
