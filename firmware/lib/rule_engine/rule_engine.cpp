@@ -18,6 +18,8 @@ static bool overrideActive = false;
 static unsigned long lastOverrideTime = 0;
 static unsigned long lastPumpToggle = 0;
 static bool pumpScheduledOn = false;
+static bool pumpInitialized = false;
+static bool lastWaterLevelLowState = false;
 
 // === Helpers ===
 inline unsigned long millis_elapsed(unsigned long now, unsigned long since) {
@@ -102,12 +104,25 @@ void check_and_control_pump(float waterTemp, bool waterLevelLow, const CommandSt
     if (waterLevelLow) {
         control_pump(false);    // Always force OFF if water is low
         Serial.println("🚰 Emergency refill active — water level low");
+        lastWaterLevelLowState = true;
         return;
     }
 
     // === Normal Pump Cycle ===
     if (overrideActive) {
         control_pump(true);
+        return;
+    }
+
+    // === Initialize/Recover Cycle ===
+    // Start with ON phase on first entry or immediately after water level recovers
+    if (!pumpInitialized || lastWaterLevelLowState) {
+        pumpInitialized = true;
+        lastWaterLevelLowState = false;
+        pumpScheduledOn = true;
+        lastPumpToggle = now;
+        control_pump(true);
+        Serial.println("🔄 Pump AUTO initial/resume ON phase started");
         return;
     }
 
@@ -122,6 +137,17 @@ void check_and_control_pump(float waterTemp, bool waterLevelLow, const CommandSt
         lastPumpToggle = now;
         control_pump(false);
         Serial.println("⏸️ Pump AUTO cycle pausing");
+    }
+
+    // === Periodic status log (every 60s) ===
+    static unsigned long lastStatusLog = 0;
+    if (millis_elapsed(now, lastStatusLog) >= 60000UL) {
+        unsigned long phaseElapsedSec = millis_elapsed(now, lastPumpToggle) / 1000UL;
+        Serial.printf("🔄 Pump AUTO status — %s, %lus into %s phase\n",
+                      pumpScheduledOn ? "ON" : "OFF",
+                      phaseElapsedSec,
+                      pumpScheduledOn ? "ON" : "OFF");
+        lastStatusLog = now;
     }
 }
 

@@ -18,7 +18,12 @@
 #define RTDB_POLL_INTERVAL 1000  // Poll RTDB every 1 second
 
 RealTimeData current = {}; // Initialize all fields to 0/false
-Commands currentCommands = {}; // Initialize all command fields to 0/false
+Commands currentCommands = { // Default to AUTO mode for all actuators
+    {true, false}, // fan
+    {true, false}, // light
+    {true, false}, // pump
+    {true, false}  // valve
+};
 
 // === FORWARD DECLARATIONS ===
 void initAllModules();
