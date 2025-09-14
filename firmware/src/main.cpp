@@ -18,7 +18,12 @@
 #define RTDB_POLL_INTERVAL 1000  // Poll RTDB every 1 second
 
 RealTimeData current = {}; // Initialize all fields to 0/false
-Commands currentCommands = {}; // Initialize all command fields to 0/false
+Commands currentCommands = { // Default to AUTO mode for all actuators
+    {true, false}, // fan
+    {true, false}, // light
+    {true, false}, // pump
+    {true, false}  // valve
+}; // Initialize all command fields to 0/false
 
 // === FORWARD DECLARATIONS ===
 void initAllModules();
@@ -265,7 +270,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- Float Switch ---
-    bool floatState = USE_MOCK_DATA ? (rand() % 2) : float_switch_active();
+    bool floatState = float_switch_active();
     if (floatState != lastFloatState) {
         data.floatTriggered = floatState;
         Serial.printf("💧 Float Switch: %s\n", floatState ? "TRIGGERED" : "NORMAL");

@@ -16,8 +16,8 @@ const int RELAYS[] = {
 void relay_control_init() {
     for (int i = 0; i < sizeof(RELAYS) / sizeof(RELAYS[0]); i++) {
         pinMode(RELAYS[i], OUTPUT);
-        // Turn OFF all relays at startup
-        digitalWrite(RELAYS[i], LOW);
+        // Turn OFF all relays at startup. RELAYS MUST BE WIRES TO NO TERMIALS
+        digitalWrite(RELAYS[i], HIGH); //HIGH = OFF for active LOW relays, LOW = ON relay
 
         // Set actuator state
         if (RELAYS[i] == FAN_RELAY_PIN) actuatorState.fan = false;
@@ -31,7 +31,9 @@ void relay_control_init() {
 
 // === Relay control logic ===
 void setRelay(int relayPin, bool state) {
-    digitalWrite(relayPin, state ? HIGH : LOW);
+    digitalWrite(relayPin, state ? LOW : HIGH); 
+    // if state == true → relayPin gets LOW (relay ON, since active LOW)
+    // if state == false → relayPin gets HIGH (relay OFF)
 
     if (relayPin == FAN_RELAY_PIN) actuatorState.fan = state;
     else if (relayPin == PUMP_RELAY_PIN) actuatorState.pump = state;

@@ -69,6 +69,10 @@
 #define PUMP_OFF_DURATION      45U   // minutes
 #define PUMP_CYCLE_DURATION    (PUMP_ON_DURATION + PUMP_OFF_DURATION)
 
+// Pump thermal override hysteresis (continuous ON when hot until cooled)
+#define WATER_TEMP_OVERRIDE_ON_C    30.0f
+#define WATER_TEMP_OVERRIDE_OFF_C   29.0f
+
 #define MINUTES(h, m) ((h) * 60 + (m))
 
 #define LIGHT_MORNING_ON   MINUTES(5, 30)   // 5:30 AM
@@ -76,6 +80,14 @@
 #define LIGHT_EVENING_ON   MINUTES(15, 0)   // 3:00 PM
 #define LIGHT_EVENING_OFF  MINUTES(18, 0)   // 6:00 PM
 
+
+// === Float/Valve Safety =====
+// Debounce windows for float switch transitions
+#define FLOAT_LOW_DEBOUNCE_MS   3000UL   // require low for 3s
+#define FLOAT_HIGH_DEBOUNCE_MS  5000UL   // require high for 5s
+
+// Maximum time to keep refill valve open before safety lock
+#define VALVE_MAX_OPEN_MS       (30UL * 60UL * 1000UL)  // 30 minutes
 
 //=== WIFI Configuration ===
 //SHIELA'S WIFI

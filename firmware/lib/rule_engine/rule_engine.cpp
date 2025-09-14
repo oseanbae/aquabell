@@ -6,192 +6,214 @@
 #include "firestore_client.h"
 #include <time.h>
 
-unsigned long (*getMillis)() = millis;
-
-#define PUMP_OVERRIDE_DURATION  300000UL
-#define PUMP_OVERRIDE_COOLDOWN   60000UL
-
-// === State Tracking ===
-static bool fanActive = false;
-static unsigned long fanOnSince = 0;
-static bool overrideActive = false;
-static unsigned long lastOverrideTime = 0;
-static unsigned long lastPumpToggle = 0;
-static bool pumpScheduledOn = false;
-
-// === Helpers ===
+// ===== Utility: millis tracking =====
 inline unsigned long millis_elapsed(unsigned long now, unsigned long since) {
-    return (unsigned long)(now - since);
+    return now - since;
 }
 
-
-// === FAN LOGIC ===
-void check_climate_and_control_fan(float airTemp, float humidity, int currentMinutes, const CommandState& fanCommand) {
-    // ← ADDED: Sensor validation
-    if (isnan(airTemp) || isnan(humidity)) {
-        Serial.println("⚠️ Invalid sensor data for fan control");
-        return;
+// ===== Utility: Manual override =====
+bool handle_manual_mode(const CommandState& cmd, void (*controlFn)(bool), const char* label) {
+    if (!cmd.isAuto) {
+        controlFn(cmd.value);
+        Serial.printf("%s MANUAL — %s\n", label, cmd.value ? "ON" : "OFF");
+        return true;
     }
+    return false;
+}
 
-    // Check if fan is in manual mode
-    if (!fanCommand.isAuto) {
-        control_fan(fanCommand.value);
-        Serial.printf("🌀 Fan MANUAL — Value: %s\n", fanCommand.value ? "ON" : "OFF");
-        return;
-    }
+struct ValveState {
+    bool open = false;
+    unsigned long openSince = 0;
+    unsigned long floatLowSince = 0;
+    unsigned long floatHighSince = 0;
+};
+static ValveState valveState;
 
-    // Auto mode - apply rules
-    const int MONITOR_START = 480;  // 08:00
-    const int MONITOR_END   = 1020; // 17:00
+// ===== FAN LOGIC =====
+void check_climate_and_control_fan(float airTemp, float humidity, int currentMinutes, const CommandState& cmd) {
+    if (handle_manual_mode(cmd, control_fan, "🌀 Fan")) return;
+    if (isnan(airTemp) || isnan(humidity)) return;
 
-    bool inWindow = currentMinutes >= MONITOR_START && currentMinutes <= MONITOR_END;
-    unsigned long now = getMillis();
+    static bool fanActive = false;
+    static unsigned long fanOnSince = 0;
+    unsigned long now = millis();
 
+    // Schedule window (daytime 08:00–17:00)
+    const int DAY_START = 480;   // 08:00
+    const int DAY_END   = 1020;  // 17:00
+    bool isDaytime = currentMinutes >= DAY_START && currentMinutes <= DAY_END;
+
+    // Thresholds
     bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;
-    bool humHigh = humidity > HUMIDITY_ON_THRESHOLD;
+    bool tempLow  = airTemp < TEMP_OFF_THRESHOLD;
+    bool humHigh  = humidity > HUMIDITY_ON_THRESHOLD;
+    bool humLow   = humidity < HUMIDITY_OFF_THRESHOLD;
     bool emergency = airTemp >= TEMP_EMERGENCY;
 
-    bool shouldTurnOn = inWindow && !fanActive && ((tempHigh && humHigh) || emergency);
-    bool shouldTurnOff = fanActive && (
-        (airTemp < TEMP_OFF_THRESHOLD && humidity < HUMIDITY_OFF_THRESHOLD) ||
-        millis_elapsed(now, fanOnSince) >= FAN_MAX_CONTINUOUS_MS
-    );
+    // Decisions
+    bool shouldOn = false;
+    bool shouldOff = false;
 
-    if (shouldTurnOn) {
+    if (isDaytime) {
+        // Daytime: respond to temp, humidity, or emergency
+        shouldOn  = (!fanActive) && (emergency || tempHigh || humHigh);
+        shouldOff = fanActive && tempLow && humLow;
+    } else {
+        // Nighttime: ignore humidity, only emergency temp
+        shouldOn  = (!fanActive) && emergency;
+        shouldOff = fanActive && tempLow;
+    }
+
+    // Safety: max runtime
+    if (fanActive && millis_elapsed(now, fanOnSince) >= FAN_MAX_CONTINUOUS_MS) {
+        shouldOff = true;
+    }
+
+    // Apply state
+    if (shouldOn) {
         fanActive = true;
         fanOnSince = now;
         control_fan(true);
-        Serial.printf("🌀 Fan AUTO ON — Temp: %.1f°C, Humidity: %.1f%%\n", airTemp, humidity);
-    } else if (shouldTurnOff && millis_elapsed(now, fanOnSince) >= FAN_MINUTE_RUNTIME) {
+        Serial.printf("🌀 Fan AUTO ON — T=%.1f°C, H=%.1f%% (Day: %s)\n",
+                      airTemp, humidity, isDaytime ? "YES" : "NO");
+    } 
+    else if (shouldOff && millis_elapsed(now, fanOnSince) >= FAN_MINUTE_RUNTIME) {
         fanActive = false;
         control_fan(false);
-        Serial.println("✅ Fan AUTO OFF — Conditions normal or max runtime exceeded");
+        Serial.println("✅ Fan AUTO OFF — Normalized or safety limit");
     }
 }
 
-// === PUMP LOGIC WITH FLOAT SWITCH ===
-void check_and_control_pump(float waterTemp, bool waterLevelLow, const CommandState& pumpCommand) {
-    // ← ADDED: Sensor validation
-    if (isnan(waterTemp)) {
-        Serial.println("⚠️ Invalid water temperature for pump control");
-        return;
-    }
 
-    // Check if pump is in manual mode
-    if (!pumpCommand.isAuto) {
-        control_pump(pumpCommand.value);
-        Serial.printf("🔄 Pump MANUAL — Value: %s\n", pumpCommand.value ? "ON" : "OFF");
-        return;
-    }
+// ===== PUMP LOGIC =====
+void check_and_control_pump(bool waterLevelLow, const CommandState& cmd, const struct tm& now) {
+    if (handle_manual_mode(cmd, control_pump, "🔄 Pump")) return;
 
-    // Auto mode - apply rules
-    unsigned long now = getMillis();
+    unsigned long ms = millis();
+    static bool pumpOn = false;
+    static unsigned long lastToggle = 0;
 
-    // === Handle High Temp Override ===
-    if (waterTemp > 30.0 && !overrideActive && millis_elapsed(now, lastOverrideTime) > PUMP_OVERRIDE_COOLDOWN) {
-        overrideActive = true;
-        lastOverrideTime = now;
-        Serial.printf("⚠️ Pump override ON — water temp: %.1f°C\n", waterTemp);
-    }
-    if (overrideActive && millis_elapsed(now, lastOverrideTime) >= PUMP_OVERRIDE_DURATION) {
-        overrideActive = false;
-        Serial.println("✅ Pump override OFF — duration complete");
-    }
-
-    // === Float switch safety ===
+    // 🚰 Safety: Float switch
     if (waterLevelLow) {
-        control_pump(false);    // Always force OFF if water is low
-        Serial.println("🚰 Emergency refill active — water level low");
+        if (pumpOn) {
+            unsigned long runtimeMin = (ms - lastToggle) / 60000UL;
+            control_pump(false);
+            pumpOn = false;
+            Serial.printf("🚰 Pump OFF — water level low (was ON for %lu min, %02d:%02d)\n",
+                          runtimeMin, now.tm_hour, now.tm_min);
+        }
+        return; // exit early until water is safe again
+    }
+
+    // First run: start pump ON
+    if (lastToggle == 0) {
+        pumpOn = true;
+        lastToggle = ms;
+        control_pump(true);
+        Serial.printf("🔄 Pump cycle START — ON at %02d:%02d\n", now.tm_hour, now.tm_min);
         return;
     }
 
-    // === Normal Pump Cycle ===
-    if (overrideActive) {
-        control_pump(true);
-        return;
-    }
+    // Track elapsed minutes since last toggle
+    unsigned long elapsedMin = (ms - lastToggle) / 60000UL;
 
-    // ← FIXED: Convert minutes to milliseconds
-    if (!pumpScheduledOn && millis_elapsed(now, lastPumpToggle) >= (PUMP_OFF_DURATION * 60000UL)) {
-        pumpScheduledOn = true;
-        lastPumpToggle = now;
-        control_pump(true);
-        Serial.println("🔄 Pump AUTO cycle starting");
-    } else if (pumpScheduledOn && millis_elapsed(now, lastPumpToggle) >= (PUMP_ON_DURATION * 60000UL)) {
-        pumpScheduledOn = false;
-        lastPumpToggle = now;
+    // Scheduled cycle logic
+    if (pumpOn && millis_elapsed(ms, lastToggle) >= (PUMP_ON_DURATION * 60000UL)) {
+        pumpOn = false;
+        lastToggle = ms;
         control_pump(false);
-        Serial.println("⏸️ Pump AUTO cycle pausing");
+        Serial.printf("⏸️ Pump cycle OFF — ran %lu min, now %02d:%02d\n",
+                      elapsedMin, now.tm_hour, now.tm_min);
+    } 
+    else if (!pumpOn && millis_elapsed(ms, lastToggle) >= (PUMP_OFF_DURATION * 60000UL)) {
+        pumpOn = true;
+        lastToggle = ms;
+        control_pump(true);
+        Serial.printf("🔄 Pump cycle ON — idle %lu min, now %02d:%02d\n",
+                      elapsedMin, now.tm_hour, now.tm_min);
     }
 }
 
-// === LIGHT LOGIC ===
-void check_and_control_light(const struct tm& now, const CommandState& lightCommand) {
-    // Check if light is in manual mode
-    if (!lightCommand.isAuto) {
-        control_light(lightCommand.value);
-        Serial.printf("💡 Light MANUAL — Value: %s\n", lightCommand.value ? "ON" : "OFF");
-        return;
-    }
 
-    // Auto mode - apply time-based rules
+// ===== LIGHT LOGIC =====
+// Controls grow lights based only on time schedule (photoperiod).
+// Air temperature/humidity are not considered here.
+void check_and_control_light(const struct tm& now, const CommandState& cmd) {
+    if (handle_manual_mode(cmd, control_light, "💡 Light")) return;
+
+    static bool lightOn = false;
+    static unsigned long lastToggle = 0;
+
     int mins = now.tm_hour * 60 + now.tm_min;
-    bool on = (mins >= LIGHT_MORNING_ON && mins < LIGHT_MORNING_OFF) ||
-              (mins >= LIGHT_EVENING_ON && mins < LIGHT_EVENING_OFF);
-    control_light(on);
-    Serial.printf("💡 Light AUTO — Value: %s (Time: %02d:%02d)\n", on ? "ON" : "OFF", now.tm_hour, now.tm_min);
+
+    // Schedule: ON during morning or evening window
+    bool shouldBeOn = (mins >= LIGHT_MORNING_ON && mins < LIGHT_MORNING_OFF) ||
+                      (mins >= LIGHT_EVENING_ON && mins < LIGHT_EVENING_OFF);
+
+    if (shouldBeOn && !lightOn) {
+        lightOn = true;
+        lastToggle = millis();
+        control_light(true);
+        Serial.printf("💡 Light AUTO ON — time %02d:%02d\n", now.tm_hour, now.tm_min);
+    } 
+    else if (!shouldBeOn && lightOn) {
+        unsigned long runtimeMin = (millis() - lastToggle) / 60000UL;
+        lightOn = false;
+        lastToggle = millis();
+        control_light(false);
+        Serial.printf("💡 Light AUTO OFF — ran %lu min, now %02d:%02d\n",
+                      runtimeMin, now.tm_hour, now.tm_min);
+    }
 }
 
-// === VALVE LOGIC ===
-void check_and_control_valve(bool waterLevelLow, const CommandState& valveCommand) {
-    // Check if valve is in manual mode
-    if (!valveCommand.isAuto) {
-        control_valve(valveCommand.value);
-        Serial.printf("🚰 Valve MANUAL — Value: %s\n", valveCommand.value ? "ON" : "OFF");
-        return;
-    }
 
-    // Auto mode - emergency refill logic
+// ===== VALVE LOGIC =====
+// Opens valve when float indicates low water, closes on high water or timeout.
+void check_and_control_valve(bool waterLevelLow, const CommandState& cmd, const struct tm& now) {
+    if (handle_manual_mode(cmd, control_valve, "🚰 Valve")) return;
+
+    unsigned long ms = millis();
+
+    // Update debounce timers
     if (waterLevelLow) {
-        control_valve(true);    // Start refill valve
-        Serial.println("🚰 Valve AUTO — Emergency refill active (water level low)");
+        if (valveState.floatLowSince == 0) valveState.floatLowSince = ms;
+        valveState.floatHighSince = 0;
     } else {
-        control_valve(false);   // Stop refill if water level is OK
-        Serial.println("🚰 Valve AUTO — Water level OK, refill stopped");
+        if (valveState.floatHighSince == 0) valveState.floatHighSince = ms;
+        valveState.floatLowSince = 0;
+    }
+
+    bool debouncedLow  = waterLevelLow && millis_elapsed(ms, valveState.floatLowSince) >= FLOAT_LOW_DEBOUNCE_MS;
+    bool debouncedHigh = !waterLevelLow && millis_elapsed(ms, valveState.floatHighSince) >= FLOAT_HIGH_DEBOUNCE_MS;
+
+    // Start refill
+    if (debouncedLow && !valveState.open) {
+        valveState.open = true;
+        valveState.openSince = ms;
+        control_valve(true);
+        Serial.printf("🚰 Valve AUTO OPEN — low water detected (%02d:%02d)\n", now.tm_hour, now.tm_min);
+    }
+
+    // Stop refill
+    if (valveState.open) {
+        bool timeout = millis_elapsed(ms, valveState.openSince) >= VALVE_MAX_OPEN_MS;
+        if (debouncedHigh || timeout) {
+            unsigned long runtimeMin = (ms - valveState.openSince) / 60000UL;
+            valveState.open = false;
+            control_valve(false);
+            Serial.printf("🚰 Valve AUTO CLOSED — %s after %lu min (%02d:%02d)\n",
+                          timeout ? "timeout" : "water full", runtimeMin, now.tm_hour, now.tm_min);
+        }
     }
 }
 
-// === EMERGENCY RULES (when time is not available) ===
-void apply_emergency_rules(const RealTimeData& current) {
-    // Only apply critical safety rules that don't require time
-    bool waterLevelLow = current.floatTriggered;
-
-    // Emergency pump control (float switch safety only)
-    if (waterLevelLow) {
-        control_pump(false);    // Always force OFF if water is low
-        control_valve(true);    // Start refill valve
-        Serial.println("🚰 Emergency refill active — water level low");
-    } else {
-        control_valve(false);   // Stop refill if water level is OK
-    }
-}
-
-// === MAIN DISPATCH ===
+// ===== MAIN DISPATCH =====
 void apply_rules(const RealTimeData& current, const struct tm& now, const Commands& commands) {
     int currentMinutes = now.tm_hour * 60 + now.tm_min;
-
-    // ← FIXED: Use data from current instead of calling float_switch_active() twice
     bool waterLevelLow = current.floatTriggered;
 
-    // Fan control
     check_climate_and_control_fan(current.airTemp, current.airHumidity, currentMinutes, commands.fan);
-
-    // Pump control
-    check_and_control_pump(current.waterTemp, waterLevelLow, commands.pump);
-
-    // Light control
+    check_and_control_pump(waterLevelLow, commands.pump, now);
     check_and_control_light(now, commands.light);
-
-    // Valve control
-    check_and_control_valve(waterLevelLow, commands.valve);
+    check_and_control_valve(waterLevelLow, commands.valve, now);
 }
