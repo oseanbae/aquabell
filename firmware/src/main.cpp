@@ -123,17 +123,9 @@ void loop() {
     
     // Apply rules when sensors are updated, commands change, or float switch changes
     if (sensorsUpdated || commandsChanged || is_float_switch_triggered()) {
-        // Only apply time-dependent rules if time is available
-        if (isTimeAvailable()) {
-            struct tm timeinfo;
-            if (getLocalTm(timeinfo)) {
-                apply_rules(current, timeinfo, currentCommands);
-            }
-        } else {
-            // Apply emergency rules only (float switch, basic safety)
-            apply_emergency_rules(current);
-        }
+        updateActuators(current, currentCommands, nowMillis);
     }
+
 
     // Firebase updates (only if WiFi is connected)
     static unsigned long lastLiveUpdate = 0;
