@@ -19,6 +19,20 @@ String idToken = "";
 String refreshToken = "";
 unsigned long tokenExpiryTime = 0;
 
+// Non-blocking retry state for RTDB PATCH requests
+struct RetryState {
+    bool isRetrying = false;
+    unsigned long lastAttemptTime = 0;
+    int attemptCount = 0;
+    String payload = "";
+    String url = "";
+    unsigned long retryInterval = 5000; // 5 seconds between retries
+    int maxRetries = 3;
+    bool isRelaySync = false; // true for syncRelayState, false for other operations
+};
+
+static RetryState retryState;
+
 // RTC instance is defined in main.cpp, we'll use it via parameter
 
 void firebaseSignIn() {
@@ -89,10 +103,100 @@ void refreshIdToken() {
     https.end();
 }
 
-void pushToFirestoreLive(const RealTimeData &data) {
-    if (millis() > tokenExpiryTime) refreshIdToken();
-    
+// ===== NON-BLOCKING RETRY MANAGEMENT =====
 
+// Initialize retry state for a new operation
+void initRetryState(const String& url, const String& payload, bool isRelaySync = false) {
+    retryState.isRetrying = true;
+    retryState.lastAttemptTime = millis();
+    retryState.attemptCount = 0;
+    retryState.payload = payload;
+    retryState.url = url;
+    retryState.isRelaySync = isRelaySync;
+    Serial.printf("[Retry] Initialized retry state for %s operation\n", 
+                  isRelaySync ? "relay sync" : "RTDB");
+}
+
+// Check if retry is needed and perform it
+bool processRetry() {
+    if (!retryState.isRetrying) {
+        return false; // No retry in progress
+    }
+
+    unsigned long now = millis();
+    
+    // Check if enough time has passed for next retry
+    if (now - retryState.lastAttemptTime < retryState.retryInterval) {
+        return true; // Still waiting, but retry is in progress
+    }
+
+    // Check if we've exceeded max retries
+    if (retryState.attemptCount >= retryState.maxRetries) {
+        Serial.printf("[Retry] Max retries (%d) exceeded, giving up\n", retryState.maxRetries);
+        retryState.isRetrying = false;
+        return false;
+    }
+
+    // Check and refresh token before retry
+    if (millis() > tokenExpiryTime) {
+        Serial.println("[Retry] Token expired, refreshing before retry");
+        refreshIdToken();
+    }
+
+    // Perform the retry attempt
+    retryState.attemptCount++;
+    retryState.lastAttemptTime = now;
+    
+    Serial.printf("[Retry] Attempt %d/%d for %s operation\n", 
+                  retryState.attemptCount, retryState.maxRetries,
+                  retryState.isRelaySync ? "relay sync" : "RTDB");
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient https;
+    https.begin(client, retryState.url);
+    https.addHeader("Content-Type", "application/json");
+
+    int httpResponseCode = https.sendRequest("PATCH", retryState.payload);
+    Serial.printf("[Retry] HTTP response: %d\n", httpResponseCode);
+
+    if (httpResponseCode == 200) {
+        Serial.printf("[Retry] ✅ Success on attempt %d\n", retryState.attemptCount);
+        retryState.isRetrying = false;
+        https.end();
+        return false; // Retry completed successfully
+    } else {
+        String response = https.getString();
+        Serial.printf("[Retry] Failed: %s\n", https.errorToString(httpResponseCode).c_str());
+        Serial.printf("[Retry] Response body: %s\n", response.c_str());
+        https.end();
+        
+        // Continue retrying if we haven't exceeded max attempts
+        if (retryState.attemptCount < retryState.maxRetries) {
+            Serial.printf("[Retry] Will retry in %lu ms\n", retryState.retryInterval);
+        }
+    }
+
+    return true; // Retry still in progress
+}
+
+// Check if any retry is currently in progress
+bool isRetryInProgress() {
+    return retryState.isRetrying;
+}
+
+void pushToFirestoreLive(const RealTimeData &data) {
+    // If a retry is already in progress, don't start a new push
+    if (isRetryInProgress()) {
+        Serial.println("[FIRESTORE] Retry in progress, skipping pushToFirestoreLive");
+        return;
+    }
+
+    // Check and refresh token before Firestore call
+    if (millis() > tokenExpiryTime) {
+        Serial.println("[FIRESTORE] Token expired, refreshing before pushToFirestoreLive");
+        refreshIdToken();
+    }
 
     String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/live_data/" DEVICE_ID;
 
@@ -111,32 +215,38 @@ void pushToFirestoreLive(const RealTimeData &data) {
     String payload;
     serializeJson(doc, payload);
 
+    // Attempt the PATCH request
     WiFiClientSecure client;
     client.setInsecure();
-
     HTTPClient https;
     https.begin(client, url);
     https.addHeader("Content-Type", "application/json");
     https.addHeader("Authorization", "Bearer " + idToken);
 
     int httpResponseCode = https.sendRequest("PATCH", payload);
+    Serial.printf("[FIRESTORE] pushToFirestoreLive HTTP response: %d\n", httpResponseCode);
 
     if (httpResponseCode == 200) {
-        // Success - no need to print every update
-        Serial.println("[Firestore] Live data updated.");
+        Serial.println("[FIRESTORE] Live data updated successfully");
+        https.end();
     } else {
-        Serial.printf("[Firestore] Update failed: %s\n", https.errorToString(httpResponseCode).c_str());
-        delay(5000);
-        httpResponseCode = https.sendRequest("PATCH", payload);
-        if (httpResponseCode == 200) Serial.println("[Firestore] ✅ Retry successful");
+        String response = https.getString();
+        Serial.printf("[FIRESTORE] Update failed: %s\n", https.errorToString(httpResponseCode).c_str());
+        Serial.printf("[FIRESTORE] Response body: %s\n", response.c_str());
+        https.end();
+        
+        // Initialize non-blocking retry instead of blocking delay
+        Serial.println("[FIRESTORE] Initializing non-blocking retry for live data push");
+        initRetryState(url, payload, false); // false indicates this is not a relay sync operation
     }
-
-    https.end();
 }
 
-
 void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
-    if (millis() > tokenExpiryTime) refreshIdToken();
+    // Check and refresh token before Firestore call
+    if (millis() > tokenExpiryTime) {
+        Serial.println("[Firestore] Token expired, refreshing before pushBatchLogToFirestore");
+        refreshIdToken();
+    }
 
     if (size <= 0) return;
 
@@ -209,7 +319,11 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
 }
 
 bool fetchControlCommands() {
-    if (millis() > tokenExpiryTime) refreshIdToken();
+    // Check and refresh token before RTDB call
+    if (millis() > tokenExpiryTime) {
+        Serial.println("[RTDB] Token expired, refreshing before fetchControlCommands");
+        refreshIdToken();
+    }
 
     String url = "https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app/commands/" DEVICE_ID ".json?auth=" + idToken;
 
@@ -219,12 +333,24 @@ bool fetchControlCommands() {
     https.begin(client, url);
 
     int httpResponseCode = https.GET();
+    Serial.printf("[RTDB] fetchControlCommands HTTP response: %d\n", httpResponseCode);
+    
     if (httpResponseCode != 200) {
-        Serial.print("[RTDB] Fetch control commands failed: ");
-        Serial.println(https.errorToString(httpResponseCode));
+        String response = https.getString();
+        Serial.printf("[RTDB] Fetch control commands failed: %s\n", https.errorToString(httpResponseCode).c_str());
+        Serial.printf("[RTDB] Response body: %s\n", response.c_str());
+        https.end();
+        
+        // Retry once
         delay(5000);
+        https.begin(client, url);
         httpResponseCode = https.GET();
+        Serial.printf("[RTDB] Retry HTTP response: %d\n", httpResponseCode);
+        
         if (httpResponseCode != 200) {
+            response = https.getString();
+            Serial.printf("[RTDB] Retry failed: %s\n", https.errorToString(httpResponseCode).c_str());
+            Serial.printf("[RTDB] Retry response body: %s\n", response.c_str());
             https.end();
             return false;
         }
@@ -232,16 +358,19 @@ bool fetchControlCommands() {
 
     String response = https.getString();
     https.end();
+    Serial.printf("[RTDB] fetchControlCommands response body: %s\n", response.c_str());
 
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, response);
     if (err) {
-        Serial.print("[RTDB] JSON parse error: ");
-        Serial.println(err.f_str());
+        Serial.printf("[RTDB] JSON parse error: %s\n", err.c_str());
         return false;
     }
 
-    if (doc.isNull()) return false;
+    if (doc.isNull()) {
+        Serial.println("[RTDB] No command data received");
+        return false;
+    }
 
     bool anyManualControl = false;
 
@@ -258,12 +387,13 @@ bool fetchControlCommands() {
                 bool isAuto = actuatorData["isAuto"].as<bool>();
                 bool value = actuatorData["value"].as<bool>();
                 
-                Serial.println(String("[Control] ") + actuator + " isAuto=" + (isAuto ? "true" : "false") + " value=" + (value ? "true" : "false"));
+                Serial.printf("[Control] %s isAuto=%s value=%s\n", 
+                             actuator, isAuto ? "true" : "false", value ? "true" : "false");
                 
                 if (!isAuto) { // Manual mode when isAuto is false
                     controlFunctions[i](value);
                     anyManualControl = true;
-                    Serial.println(String("[Control] Applied manual control for ") + actuator);
+                    Serial.printf("[Control] Applied manual control for %s\n", actuator);
                 }
             }
         }
@@ -279,7 +409,11 @@ bool fetchControlCommands() {
 }
 
 bool fetchCommandsFromRTDB(Commands& commands) {
-    if (millis() > tokenExpiryTime) refreshIdToken();
+    // Check and refresh token before RTDB call
+    if (millis() > tokenExpiryTime) {
+        Serial.println("[RTDB] Token expired, refreshing before fetchCommandsFromRTDB");
+        refreshIdToken();
+    }
 
     String url = "https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app/commands/" DEVICE_ID ".json?auth=" + idToken;
 
@@ -289,20 +423,24 @@ bool fetchCommandsFromRTDB(Commands& commands) {
     https.begin(client, url);
 
     int httpResponseCode = https.GET();
+    Serial.printf("[RTDB] fetchCommandsFromRTDB HTTP response: %d\n", httpResponseCode);
+    
     if (httpResponseCode != 200) {
+        String response = https.getString();
         Serial.printf("[RTDB] Failed to fetch commands: %s\n", https.errorToString(httpResponseCode).c_str());
+        Serial.printf("[RTDB] Response body: %s\n", response.c_str());
         https.end();
         return false;
     }
 
     String response = https.getString();
     https.end();
+    Serial.printf("[RTDB] fetchCommandsFromRTDB response body: %s\n", response.c_str());
 
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, response);
     if (err) {
-        Serial.print("[RTDB] JSON parse error: ");
-        Serial.println(err.f_str());
+        Serial.printf("[RTDB] JSON parse error: %s\n", err.c_str());
         return false;
     }
 
@@ -375,20 +513,57 @@ bool fetchCommandsFromRTDB(Commands& commands) {
     return hasChanges;
 }
 
-void syncRelayState(const RealTimeData &data) {
-    if (millis() > tokenExpiryTime) refreshIdToken();
+void syncRelayState(const RealTimeData &data, const Commands& commands) {
+    // If a retry is already in progress, don't start a new sync
+    if (isRetryInProgress()) {
+        Serial.println("[RTDB] Retry in progress, skipping syncRelayState");
+        return;
+    }
+
+    // Check and refresh token before RTDB call
+    if (millis() > tokenExpiryTime) {
+        Serial.println("[RTDB] Token expired, refreshing before syncRelayState");
+        refreshIdToken();
+    }
 
     String url = "https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app/commands/" DEVICE_ID ".json?auth=" + idToken;
 
     JsonDocument doc;
-    doc["fan"]["value"] = data.relayStates.fan;
-    doc["light"]["value"] = data.relayStates.light;
-    doc["pump"]["value"] = data.relayStates.waterPump;
-    doc["valve"]["value"] = data.relayStates.valve;
+    
+    // Only update RTDB values for actuators that are in AUTO mode
+    // Manual actuators (isAuto == false) must not be overwritten by the ESP32
+    if (commands.fan.isAuto) {
+        doc["fan"]["value"] = data.relayStates.fan;
+        doc["fan"]["isAuto"] = true; // Ensure isAuto flag is set
+        Serial.println("[RTDB] Syncing fan state (AUTO mode)");
+    }
+    if (commands.light.isAuto) {
+        doc["light"]["value"] = data.relayStates.light;
+        doc["light"]["isAuto"] = true; // Ensure isAuto flag is set
+        Serial.println("[RTDB] Syncing light state (AUTO mode)");
+    }
+    if (commands.pump.isAuto) {
+        doc["pump"]["value"] = data.relayStates.waterPump;
+        doc["pump"]["isAuto"] = true; // Ensure isAuto flag is set
+        Serial.println("[RTDB] Syncing pump state (AUTO mode)");
+    }
+    if (commands.valve.isAuto) {
+        doc["valve"]["value"] = data.relayStates.valve;
+        doc["valve"]["isAuto"] = true; // Ensure isAuto flag is set
+        Serial.println("[RTDB] Syncing valve state (AUTO mode)");
+    }
+
+    // Check if there are any AUTO actuators to sync
+    if (doc.size() == 0) {
+        Serial.println("[RTDB] No AUTO actuators to sync, skipping RTDB update");
+        return;
+    }
 
     String payload;
     serializeJson(doc, payload);
+    Serial.printf("[RTDB] Syncing payload: %s\n", payload.c_str());
 
+    // Attempt the PATCH request
     WiFiClientSecure client;
     client.setInsecure();
     HTTPClient https;
@@ -396,14 +571,20 @@ void syncRelayState(const RealTimeData &data) {
     https.addHeader("Content-Type", "application/json");
 
     int httpResponseCode = https.sendRequest("PATCH", payload);
+    Serial.printf("[RTDB] syncRelayState HTTP response: %d\n", httpResponseCode);
+    
     if (httpResponseCode == 200) {
-        Serial1.println("[RTDB] Relay sync updated.");
+        Serial.println("[RTDB] Relay sync updated successfully");
+        https.end();
     } else {
+        String response = https.getString();
         Serial.printf("[RTDB] Relay sync failed: %s\n", https.errorToString(httpResponseCode).c_str());
-        delay(5000);
-        httpResponseCode = https.sendRequest("PATCH", payload);
-        if (httpResponseCode == 200) Serial.println("[RTDB] ✅ Relay retry successful");
+        Serial.printf("[RTDB] Response body: %s\n", response.c_str());
+        https.end();
+        
+        // Initialize non-blocking retry instead of blocking delay
+        Serial.println("[RTDB] Initializing non-blocking retry for relay sync");
+        initRetryState(url, payload, true); // true indicates this is a relay sync operation
     }
-
-    https.end();
 }
+

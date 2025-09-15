@@ -7,380 +7,282 @@
 #include <time.h>
 #include "time_utils.h"
 
-// ===== Utility: millis tracking =====
-inline unsigned long millis_elapsed(unsigned long now, unsigned long since) {
-    return now - since;
-}
+// ===== CLEAN RULE ENGINE =====
 
-// ===== Utility: Manual override =====
-bool handle_manual_mode(const CommandState& cmd, void (*controlFn)(bool), const char* label) {
-    if (!cmd.isAuto) {
-        controlFn(cmd.value);
-        Serial.printf("%s MANUAL — %s\n", label, cmd.value ? "ON" : "OFF");
-        return true;
+// Forward declarations for fallback functions
+void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
+void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
+void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis);
+void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis);
+
+// New mode-aware rule engine that handles AUTO/MANUAL mode control
+void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, const Commands& commands, unsigned long nowMillis) {
+    Serial.println("[RULE_ENGINE] Applying mode-aware rules: AUTO=ESP32 control, MANUAL=RTDB control");
+    
+    // 1. EMERGENCY OVERRIDES (highest priority - always applied regardless of mode)
+    actuators.emergencyMode = false;
+    actuators.lowWaterEmergency = data.floatTriggered;
+    actuators.highTempEmergency = !isnan(data.airTemp) && data.airTemp >= TEMP_EMERGENCY;
+    
+    if (actuators.lowWaterEmergency || actuators.highTempEmergency) {
+        actuators.emergencyMode = true;
+        Serial.println("[RULE_ENGINE] 🚨 EMERGENCY MODE ACTIVATED");
+        
+        if (actuators.lowWaterEmergency) {
+            Serial.println("[RULE_ENGINE] 💧 Low water emergency - shutting off pump, opening valve");
+            actuators.pump = false;
+            actuators.valve = true;
+        }
+        
+        if (actuators.highTempEmergency) {
+            Serial.println("[RULE_ENGINE] 🌡️ High temperature emergency - turning on fan");
+            actuators.fan = true;
+        }
+        
+        // Emergency overrides all other controls
+        control_fan(actuators.fan);
+        control_light(actuators.light);
+        control_pump(actuators.pump);
+        control_valve(actuators.valve);
+        return;
     }
-    return false;
+    
+    // 2. MANUAL MODE: Use values from RTDB (app/user control)
+    if (!commands.fan.isAuto) {
+        actuators.fan = commands.fan.value;
+        actuators.fanAuto = false;
+        Serial.printf("[RULE_ENGINE] 🌀 Fan MANUAL from RTDB: %s\n", actuators.fan ? "ON" : "OFF");
+    } else {
+        actuators.fanAuto = true;
+    }
+    
+    if (!commands.light.isAuto) {
+        actuators.light = commands.light.value;
+        actuators.lightAuto = false;
+        Serial.printf("[RULE_ENGINE] 💡 Light MANUAL from RTDB: %s\n", actuators.light ? "ON" : "OFF");
+    } else {
+        actuators.lightAuto = true;
+    }
+    
+    if (!commands.pump.isAuto) {
+        actuators.pump = commands.pump.value;
+        actuators.pumpAuto = false;
+        Serial.printf("[RULE_ENGINE] 💧 Pump MANUAL from RTDB: %s\n", actuators.pump ? "ON" : "OFF");
+    } else {
+        actuators.pumpAuto = true;
+    }
+    
+    if (!commands.valve.isAuto) {
+        actuators.valve = commands.valve.value;
+        actuators.valveAuto = false;
+        Serial.printf("[RULE_ENGINE] 🚰 Valve MANUAL from RTDB: %s\n", actuators.valve ? "ON" : "OFF");
+    } else {
+        actuators.valveAuto = true;
+    }
+    
+    // 3. AUTO MODE: ESP32 controls based on sensor data and rules
+    if (actuators.fanAuto) {
+        checkFanFallback(actuators, data.airTemp, data.airHumidity, nowMillis);
+    }
+    
+    if (actuators.lightAuto) {
+        checkLightFallback(actuators, nowMillis);
+    }
+    
+    if (actuators.pumpAuto) {
+        checkPumpFallback(actuators, data.floatTriggered, nowMillis);
+    }
+    
+    if (actuators.valveAuto) {
+        checkValveFallback(actuators, data.floatTriggered, nowMillis);
+    }
+    
+    // 4. Apply final states to physical relays (always apply correct values)
+    control_fan(actuators.fan);
+    control_light(actuators.light);
+    control_pump(actuators.pump);
+    control_valve(actuators.valve);
+    
+    Serial.printf("[RULE_ENGINE] Final states - Fan:%s(%s) Light:%s(%s) Pump:%s(%s) Valve:%s(%s)\n",
+                 actuators.fan ? "ON" : "OFF", actuators.fanAuto ? "AUTO" : "MANUAL",
+                 actuators.light ? "ON" : "OFF", actuators.lightAuto ? "AUTO" : "MANUAL",
+                 actuators.pump ? "ON" : "OFF", actuators.pumpAuto ? "AUTO" : "MANUAL",
+                 actuators.valve ? "ON" : "OFF", actuators.valveAuto ? "AUTO" : "MANUAL");
 }
 
-struct ValveState {
-    bool open = false;
-    unsigned long openSince = 0;
-    unsigned long floatLowSince = 0;
-    unsigned long floatHighSince = 0;
-};
-static ValveState valveState;
+// Legacy function for backward compatibility (simplified)
+void applyRules(RealTimeData& data, ActuatorState& actuators, unsigned long nowMillis) {
+    // Create default commands (all AUTO mode)
+    Commands defaultCommands = {
+        {true, false}, // fan
+        {true, false}, // light
+        {true, false}, // pump
+        {true, false}  // valve
+    };
+    
+    // Use the new mode-aware function
+    applyRulesWithModeControl(data, actuators, defaultCommands, nowMillis);
+}
 
-// ===== FAN LOGIC =====
-void check_climate_and_control_fan(float airTemp, float humidity, int currentMinutes, const CommandState& cmd) {
-    if (handle_manual_mode(cmd, control_fan, "🌀 Fan")) return;
+// ===== FALLBACK CONTROL FUNCTIONS =====
+
+void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis) {
+    static unsigned long floatLowSince = 0;
+    static unsigned long floatHighSince = 0;
+    static unsigned long valveOpenSince = 0;
+    
+    // Update debounce timers
+    if (waterLevelLow) {
+        if (floatLowSince == 0) floatLowSince = nowMillis;
+        floatHighSince = 0;
+    } else {
+        if (floatHighSince == 0) floatHighSince = nowMillis;
+        floatLowSince = 0;
+    }
+    
+    bool debouncedLow = waterLevelLow && (nowMillis - floatLowSince >= FLOAT_LOW_DEBOUNCE_MS);
+    bool debouncedHigh = !waterLevelLow && (nowMillis - floatHighSince >= FLOAT_HIGH_DEBOUNCE_MS);
+    
+    // Start refill
+    if (debouncedLow && !actuators.valve) {
+        actuators.valve = true;
+        valveOpenSince = nowMillis;
+        Serial.println("[RULE_ENGINE] 🚰 Valve AUTO OPEN — low water detected");
+    }
+    
+    // Stop refill
+    if (actuators.valve) {
+        bool timeout = (nowMillis - valveOpenSince >= VALVE_MAX_OPEN_MS);
+        if (debouncedHigh || timeout) {
+            actuators.valve = false;
+            valveOpenSince = 0;
+            Serial.printf("[RULE_ENGINE] 🚰 Valve AUTO CLOSED — %s\n",
+                         timeout ? "timeout" : "water full");
+        }
+    }
+}
+
+void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis) {
+    static unsigned long lastToggle = 0;
+    
+    // Safety: turn OFF if float switch is low
+    if (waterLevelLow) {
+        if (actuators.pump) {
+            actuators.pump = false;
+            Serial.println("[RULE_ENGINE] 💧 Pump OFF — float switch LOW");
+        }
+        return;
+    }
+    
+    // First run: start the ON cycle immediately
+    if (lastToggle == 0) {
+        actuators.pump = true;
+        lastToggle = nowMillis;
+        Serial.println("[RULE_ENGINE] 💧 Pump ON — first run");
+        return;
+    }
+    
+    // Scheduled cycle: ON/OFF durations
+    const unsigned long ON_DURATION = PUMP_ON_DURATION * 60 * 1000UL; // Convert minutes to ms
+    const unsigned long OFF_DURATION = PUMP_OFF_DURATION * 60 * 1000UL;
+    
+    if (actuators.pump && (nowMillis - lastToggle >= ON_DURATION)) {
+        actuators.pump = false;
+        lastToggle = nowMillis;
+        Serial.println("[RULE_ENGINE] 💧 Pump OFF — schedule");
+    } else if (!actuators.pump && (nowMillis - lastToggle >= OFF_DURATION)) {
+        actuators.pump = true;
+        lastToggle = nowMillis;
+        Serial.println("[RULE_ENGINE] 💧 Pump ON — schedule");
+    }
+}
+
+void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis) {
     if (isnan(airTemp) || isnan(humidity)) return;
-
-    static bool fanActive = false;
+    
     static unsigned long fanOnSince = 0;
-    unsigned long now = millis();
-
-    // Schedule window (daytime 08:00–17:00)
-    const int DAY_START = 480;   // 08:00
-    const int DAY_END   = 1020;  // 17:00
-    bool isDaytime = currentMinutes >= DAY_START && currentMinutes <= DAY_END;
-
+    
     // Thresholds
     bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;
-    bool tempLow  = airTemp < TEMP_OFF_THRESHOLD;
-    bool humHigh  = humidity > HUMIDITY_ON_THRESHOLD;
-    bool humLow   = humidity < HUMIDITY_OFF_THRESHOLD;
+    bool tempLow = airTemp < TEMP_OFF_THRESHOLD;
+    bool humHigh = humidity > HUMIDITY_ON_THRESHOLD;
+    bool humLow = humidity < HUMIDITY_OFF_THRESHOLD;
     bool emergency = airTemp >= TEMP_EMERGENCY;
-
-    // Decisions
-    bool shouldOn = false;
-    bool shouldOff = false;
-
-    if (isDaytime) {
-        // Daytime: respond to temp, humidity, or emergency
-        shouldOn  = (!fanActive) && (emergency || tempHigh || humHigh);
-        shouldOff = fanActive && tempLow && humLow;
-    } else {
-        // Nighttime: ignore humidity, only emergency temp
-        shouldOn  = (!fanActive) && emergency;
-        shouldOff = fanActive && tempLow;
-    }
-
-    // Safety: max runtime
-    if (fanActive && millis_elapsed(now, fanOnSince) >= FAN_MAX_CONTINUOUS_MS) {
-        shouldOff = true;
-    }
-
-    // Apply state
-    if (shouldOn) {
-        fanActive = true;
-        fanOnSince = now;
-        control_fan(true);
-        Serial.printf("🌀 Fan AUTO ON — T=%.1f°C, H=%.1f%% (Day: %s)\n",
-                      airTemp, humidity, isDaytime ? "YES" : "NO");
-    } 
-    else if (shouldOff && millis_elapsed(now, fanOnSince) >= FAN_MINUTE_RUNTIME) {
-        fanActive = false;
-        control_fan(false);
-        Serial.println("✅ Fan AUTO OFF — Normalized or safety limit");
-    }
-}
-
-
-// ===== PUMP LOGIC =====
-// Time-aware pump control
-void check_and_control_pump(bool waterLevelLow, const CommandState& cmd, const struct tm& now) {
-    if (!cmd.isAuto) {
-        control_pump(cmd.value);
-        return;
-    }
-
-    static bool pumpOn = false;
-    static unsigned long lastToggle = 0;
-    unsigned long nowMillis = millis();
-
-    // Safety: Float switch
-    if (waterLevelLow) {
-        if (pumpOn) {
-            control_pump(false);
-            pumpOn = false;
-        }
-        return;
-    }
-
-    // First run
-    if (lastToggle == 0) {
-        pumpOn = true;
-        lastToggle = nowMillis;
-        control_pump(true);
-        return;
-    }
-
-    // Scheduled cycle (e.g., 5 min ON/OFF)
-    if (pumpOn && nowMillis - lastToggle >= (PUMP_ON_DURATION * 60000UL)) {
-        pumpOn = false;
-        lastToggle = nowMillis;
-        control_pump(false);
-    } else if (!pumpOn && nowMillis - lastToggle >= (PUMP_OFF_DURATION * 60000UL)) {
-        pumpOn = true;
-        lastToggle = nowMillis;
-        control_pump(true);
-    }
-}
-
-// Fallback pump control (millis-based only)
-void check_and_control_pump_fallback(bool waterLevelLow, const CommandState& cmd, unsigned long nowMillis) {
-    if (!cmd.isAuto) {
-        control_pump(cmd.value);
-        return;
-    }
-
-    static bool pumpOn = false;
-    static unsigned long lastToggle = 0;
-
-    // Safety: Float switch
-    if (waterLevelLow) {
-        if (pumpOn) {
-            control_pump(false);
-            pumpOn = false;
-        }
-        return;
-    }
-
-    // First run
-    if (lastToggle == 0) {
-        pumpOn = true;
-        lastToggle = nowMillis;
-        control_pump(true);
-        return;
-    }
-
-    // Scheduled cycle (e.g., 5 min ON/OFF)
-    if (pumpOn && nowMillis - lastToggle >= (PUMP_ON_DURATION * 60000UL)) {
-        pumpOn = false;
-        lastToggle = nowMillis;
-        control_pump(false);
-    } else if (!pumpOn && nowMillis - lastToggle >= (PUMP_OFF_DURATION * 60000UL)) {
-        pumpOn = true;
-        lastToggle = nowMillis;
-        control_pump(true);
-    }
-}
-
-// Fallback fan control (no time dependency, always active)
-void check_climate_and_control_fan_fallback(float airTemp, float humidity, const CommandState& cmd) {
-    if (handle_manual_mode(cmd, control_fan, "🌀 Fan")) return;
-    if (isnan(airTemp) || isnan(humidity)) return;
-
-    static bool fanActive = false;
-    static unsigned long fanOnSince = 0;
-    unsigned long now = millis();
-
-    // Thresholds (same as time-aware version)
-    bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;
-    bool tempLow  = airTemp < TEMP_OFF_THRESHOLD;
-    bool humHigh  = humidity > HUMIDITY_ON_THRESHOLD;
-    bool humLow   = humidity < HUMIDITY_OFF_THRESHOLD;
-    bool emergency = airTemp >= TEMP_EMERGENCY;
-
-    // Decisions (always respond to conditions, no time restrictions)
-    bool shouldOn = (!fanActive) && (emergency || tempHigh || humHigh);
-    bool shouldOff = fanActive && tempLow && humLow;
-
-    // Safety: max runtime
-    if (fanActive && millis_elapsed(now, fanOnSince) >= FAN_MAX_CONTINUOUS_MS) {
-        shouldOff = true;
-    }
-
-    // Apply state
-    if (shouldOn) {
-        fanActive = true;
-        fanOnSince = now;
-        control_fan(true);
-        Serial.printf("🌀 Fan FALLBACK ON — T=%.1f°C, H=%.1f%% (No time)\n",
-                      airTemp, humidity);
-    } 
-    else if (shouldOff && millis_elapsed(now, fanOnSince) >= FAN_MINUTE_RUNTIME) {
-        fanActive = false;
-        control_fan(false);
-        Serial.println("✅ Fan FALLBACK OFF — Normalized or safety limit");
-    }
-}
-
-
-// ===== LIGHT LOGIC =====
-// Controls grow lights based only on time schedule (photoperiod).
-// Air temperature/humidity are not considered here.
-void check_and_control_light(const struct tm& now, const CommandState& cmd) {
-    if (handle_manual_mode(cmd, control_light, "💡 Light")) return;
-
-    static bool lightOn = false;
-    static unsigned long lastToggle = 0;
-
-    int mins = now.tm_hour * 60 + now.tm_min;
-
-    // Schedule: ON during morning or evening window
-    bool shouldBeOn = (mins >= LIGHT_MORNING_ON && mins < LIGHT_MORNING_OFF) ||
-                      (mins >= LIGHT_EVENING_ON && mins < LIGHT_EVENING_OFF);
-
-    if (shouldBeOn && !lightOn) {
-        lightOn = true;
-        lastToggle = millis();
-        control_light(true);
-        Serial.printf("💡 Light AUTO ON — time %02d:%02d\n", now.tm_hour, now.tm_min);
-    } 
-    else if (!shouldBeOn && lightOn) {
-        unsigned long runtimeMin = (millis() - lastToggle) / 60000UL;
-        lightOn = false;
-        lastToggle = millis();
-        control_light(false);
-        Serial.printf("💡 Light AUTO OFF — ran %lu min, now %02d:%02d\n",
-                      runtimeMin, now.tm_hour, now.tm_min);
-    }
-}
-
-// Fallback light control (simple on/off based on manual command only)
-void check_and_control_light_fallback(const CommandState& cmd) {
-    if (handle_manual_mode(cmd, control_light, "💡 Light")) return;
     
-    // In fallback mode, lights are OFF by default (safety)
-    // Only manual override can turn them on
-    static bool lightOn = false;
-    if (!lightOn) {
-        control_light(false);
-        Serial.println("💡 Light FALLBACK OFF — No time schedule available");
+    // Decisions
+    bool shouldOn = (!actuators.fan) && (emergency || tempHigh || humHigh);
+    bool shouldOff = actuators.fan && tempLow && humLow;
+    
+    // Safety: max runtime
+    if (actuators.fan && (nowMillis - fanOnSince >= FAN_MAX_CONTINUOUS_MS)) {
+        shouldOff = true;
+    }
+    
+    // Apply state
+    if (shouldOn) {
+        actuators.fan = true;
+        fanOnSince = nowMillis;
+        Serial.printf("[RULE_ENGINE] 🌀 Fan AUTO ON — T=%.1f°C, H=%.1f%%\n",
+                     airTemp, humidity);
+    } else if (shouldOff && (nowMillis - fanOnSince >= FAN_MINUTE_RUNTIME)) {
+        actuators.fan = false;
+        Serial.println("[RULE_ENGINE] ✅ Fan AUTO OFF — Normalized or safety limit");
     }
 }
 
-
-// ===== VALVE LOGIC =====
-// Opens valve when float indicates low water, closes on high water or timeout.
-void check_and_control_valve(bool waterLevelLow, const CommandState& cmd, const struct tm& now) {
-    if (handle_manual_mode(cmd, control_valve, "🚰 Valve")) return;
-
-    unsigned long ms = millis();
-
-    // Update debounce timers
-    if (waterLevelLow) {
-        if (valveState.floatLowSince == 0) valveState.floatLowSince = ms;
-        valveState.floatHighSince = 0;
-    } else {
-        if (valveState.floatHighSince == 0) valveState.floatHighSince = ms;
-        valveState.floatLowSince = 0;
-    }
-
-    bool debouncedLow  = waterLevelLow && millis_elapsed(ms, valveState.floatLowSince) >= FLOAT_LOW_DEBOUNCE_MS;
-    bool debouncedHigh = !waterLevelLow && millis_elapsed(ms, valveState.floatHighSince) >= FLOAT_HIGH_DEBOUNCE_MS;
-
-    // Start refill
-    if (debouncedLow && !valveState.open) {
-        valveState.open = true;
-        valveState.openSince = ms;
-        control_valve(true);
-        Serial.printf("🚰 Valve AUTO OPEN — low water detected (%02d:%02d)\n", now.tm_hour, now.tm_min);
-    }
-
-    // Stop refill
-    if (valveState.open) {
-        bool timeout = millis_elapsed(ms, valveState.openSince) >= VALVE_MAX_OPEN_MS;
-        if (debouncedHigh || timeout) {
-            unsigned long runtimeMin = (ms - valveState.openSince) / 60000UL;
-            valveState.open = false;
-            control_valve(false);
-            Serial.printf("🚰 Valve AUTO CLOSED — %s after %lu min (%02d:%02d)\n",
-                          timeout ? "timeout" : "water full", runtimeMin, now.tm_hour, now.tm_min);
-        }
-    }
-}
-
-// Fallback valve control (millis-based, no time logging)
-void check_and_control_valve_fallback(bool waterLevelLow, const CommandState& cmd, unsigned long nowMillis) {
-    if (handle_manual_mode(cmd, control_valve, "🚰 Valve")) return;
-
-    // Update debounce timers
-    if (waterLevelLow) {
-        if (valveState.floatLowSince == 0) valveState.floatLowSince = nowMillis;
-        valveState.floatHighSince = 0;
-    } else {
-        if (valveState.floatHighSince == 0) valveState.floatHighSince = nowMillis;
-        valveState.floatLowSince = 0;
-    }
-
-    bool debouncedLow  = waterLevelLow && millis_elapsed(nowMillis, valveState.floatLowSince) >= FLOAT_LOW_DEBOUNCE_MS;
-    bool debouncedHigh = !waterLevelLow && millis_elapsed(nowMillis, valveState.floatHighSince) >= FLOAT_HIGH_DEBOUNCE_MS;
-
-    // Start refill
-    if (debouncedLow && !valveState.open) {
-        valveState.open = true;
-        valveState.openSince = nowMillis;
-        control_valve(true);
-        Serial.println("🚰 Valve FALLBACK OPEN — low water detected (no time)");
-    }
-
-    // Stop refill
-    if (valveState.open) {
-        bool timeout = millis_elapsed(nowMillis, valveState.openSince) >= VALVE_MAX_OPEN_MS;
-        if (debouncedHigh || timeout) {
-            unsigned long runtimeMin = (nowMillis - valveState.openSince) / 60000UL;
-            valveState.open = false;
-            control_valve(false);
-            Serial.printf("🚰 Valve FALLBACK CLOSED — %s after %lu min (no time)\n",
-                          timeout ? "timeout" : "water full", runtimeMin);
-        }
-    }
-}
-
-// ===== MAIN DISPATCH =====
-void apply_rules(const RealTimeData& current, const struct tm& now, const Commands& commands) {
-    int currentMinutes = now.tm_hour * 60 + now.tm_min;
-    bool waterLevelLow = current.floatTriggered;
-
-    check_climate_and_control_fan(current.airTemp, current.airHumidity, currentMinutes, commands.fan);
-    check_and_control_pump(waterLevelLow, commands.pump, now);
-    check_and_control_light(now, commands.light);
-    check_and_control_valve(waterLevelLow, commands.valve, now);
-}
-
-
-// === Unified Actuator Control ===
-void updateActuators(const RealTimeData& current, Commands& commands, unsigned long nowMillis) {
-    bool waterLevelLow = current.floatTriggered;
-
-    // Emergency fallback
-    if (waterLevelLow) {
-        control_pump(false);
-        if (!valveState.open) {
-            valveState.open = true;
-            valveState.openSince = nowMillis;
-            control_valve(true);
-        }
-    } else {
-        if (valveState.open) {
-            valveState.open = false;
-            control_valve(false);
-        }
-    }
-
-    // Check if time is available
+void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis) {
+    // Check if time is available for schedule-based control
     if (isTimeAvailable()) {
         struct tm timeinfo;
         if (getLocalTm(timeinfo)) {
-            // Time-aware control for all actuators
-            apply_rules(current, timeinfo, commands);
-        } else {
-            // Time sync failed, use fallback
-            Serial.println("⚠️ Time sync failed, using fallback control");
-            check_climate_and_control_fan_fallback(current.airTemp, current.airHumidity, commands.fan);
-            check_and_control_pump_fallback(waterLevelLow, commands.pump, nowMillis);
-            check_and_control_light_fallback(commands.light);
-            check_and_control_valve_fallback(waterLevelLow, commands.valve, nowMillis);
+            int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+            
+            // Schedule: ON during morning or evening window
+            bool shouldBeOn = (currentMinutes >= LIGHT_MORNING_ON && currentMinutes < LIGHT_MORNING_OFF) ||
+                            (currentMinutes >= LIGHT_EVENING_ON && currentMinutes < LIGHT_EVENING_OFF);
+            
+            if (shouldBeOn && !actuators.light) {
+                actuators.light = true;
+                Serial.printf("[RULE_ENGINE] 💡 Light AUTO ON — time %02d:%02d\n", 
+                             timeinfo.tm_hour, timeinfo.tm_min);
+            } else if (!shouldBeOn && actuators.light) {
+                actuators.light = false;
+                Serial.printf("[RULE_ENGINE] 💡 Light AUTO OFF — time %02d:%02d\n", 
+                             timeinfo.tm_hour, timeinfo.tm_min);
+            }
+            return;
         }
-    } else {
-        // No time available, use fallback control
-        Serial.println("⚠️ No time available, using fallback control");
-        check_climate_and_control_fan_fallback(current.airTemp, current.airHumidity, commands.fan);
-        check_and_control_pump_fallback(waterLevelLow, commands.pump, nowMillis);
-        check_and_control_light_fallback(commands.light);
-        check_and_control_valve_fallback(waterLevelLow, commands.valve, nowMillis);
+    }
+    
+    // Fallback: lights OFF by default (safety)
+    if (actuators.light) {
+        actuators.light = false;
+        Serial.println("[RULE_ENGINE] 💡 Light AUTO OFF — No time schedule available");
     }
 }
 
+// ===== LEGACY FUNCTIONS (for backward compatibility) =====
+
+void updateActuators(RealTimeData& current, Commands& commands, unsigned long nowMillis) {
+    // Create ActuatorState from current data
+    ActuatorState actuators = {};
+    actuators.fan = current.relayStates.fan;
+    actuators.light = current.relayStates.light;
+    actuators.pump = current.relayStates.waterPump;
+    actuators.valve = current.relayStates.valve;
+    
+    // Use the new mode-aware function
+    applyRulesWithModeControl(current, actuators, commands, nowMillis);
+}
+
+void apply_rules(RealTimeData& current, const struct tm& now, const Commands& commands) {
+    // Create ActuatorState from current data
+    ActuatorState actuators = {};
+    actuators.fan = current.relayStates.fan;
+    actuators.light = current.relayStates.light;
+    actuators.pump = current.relayStates.waterPump;
+    actuators.valve = current.relayStates.valve;
+    
+    // Use the new mode-aware function
+    applyRulesWithModeControl(current, actuators, commands, millis());
+}

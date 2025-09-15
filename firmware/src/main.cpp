@@ -18,6 +18,7 @@
 #define RTDB_POLL_INTERVAL 1000  // Poll RTDB every 1 second
 
 RealTimeData current = {}; // Initialize all fields to 0/false
+ActuatorState actuators = {}; // Initialize all actuator states to false/auto
 Commands currentCommands = { // Default to AUTO mode for all actuators
     {true, false}, // fan
     {true, false}, // light
@@ -123,9 +124,26 @@ void loop() {
     
     // Apply rules when sensors are updated, commands change, or float switch changes
     if (sensorsUpdated || commandsChanged || is_float_switch_triggered()) {
-        updateActuators(current, currentCommands, nowMillis);
+        // 1️⃣ Apply AUTO mode logic: ESP32 overwrites values for AUTO actuators
+        // 2️⃣ Apply MANUAL mode logic: Use values from RTDB for MANUAL actuators
+        applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
+        
+        // Update relay states in RealTimeData for compatibility
+        current.relayStates.fan = actuators.fan;
+        current.relayStates.light = actuators.light;
+        current.relayStates.waterPump = actuators.pump;
+        current.relayStates.valve = actuators.valve;
+        
+        // 3️⃣ Always sync AUTO actuator values to RTDB (non-blocking)
+        if (WiFi.status() == WL_CONNECTED) {
+            syncRelayState(current, currentCommands);
+        }
     }
 
+    // Process non-blocking retries for RTDB operations
+    if (isRetryInProgress()) {
+        processRetry();
+    }
 
     // Firebase updates (only if WiFi is connected)
     static unsigned long lastLiveUpdate = 0;
@@ -139,7 +157,9 @@ void loop() {
     if (WiFi.status() == WL_CONNECTED) {
         // Live push every 10 seconds (synchronized with sensor readings)
         if (nowMillis - lastLiveUpdate >= liveInterval) {
-            pushToFirestoreLive(current);
+            // 1️⃣ Push only live sensor data to Firestore
+            pushToFirestoreLive(current);  // Only fields: waterTemp, pH, dissolvedOxygen, turbidityNTU, airTemp, airHumidity, floatTriggered
+            
             lastLiveUpdate = nowMillis;
         }
 
@@ -152,6 +172,8 @@ void loop() {
         if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
             time_t timestamp = getUnixTime();
             if (timestamp > 0) {
+                // 2️⃣ Push aggregated 5-min averages (sensor logs) to Firestore
+                // Note: pushBatchLogToFirestore is kept for backward compatibility
                 pushBatchLogToFirestore(logBuffer, logIndex, timestamp);
             }
             logIndex = 0;
