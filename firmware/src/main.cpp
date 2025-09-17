@@ -10,11 +10,21 @@
 #include "float_switch.h"
 #include "sensor_data.h"
 #include "rule_engine.h"
+#include "lcd_display.h"
 #include "firestore_client.h"
 #include "time_utils.h"
 
+
 // === CONSTANTS ===
+#define USE_DHT_MOCK true
+#define USE_PH_MOCK true
+#define USE_DO_MOCK true
+#define USE_TURBIDITY_MOCK true
+#define USE_WATERTEMP_MOCK true
+#define USE_FLOATSWITCH_MOCK true
+
 #define USE_MOCK_DATA true
+
 #define RTDB_POLL_INTERVAL 1000  // Poll RTDB every 1 second
 
 RealTimeData current = {}; // Initialize all fields to 0/false
@@ -32,6 +42,7 @@ bool readSensors(unsigned long now, RealTimeData &data);
 void displaySensorReading(const char* label, float value, const char* unit) {
     Serial.printf("[SENSOR] %s = %.2f %s\n", label, value, unit);
 }
+RealTimeData readMockSensors(unsigned long nowMillis);
 void connectWiFi() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print("Connecting to WiFi...");
@@ -97,6 +108,7 @@ void setup() {
 void loop() {
     unsigned long nowMillis = millis();
 
+    
     // Non-blocking WiFi check
     if (WiFi.status() != WL_CONNECTED) {
         static unsigned long lastWiFiAttempt = 0;
@@ -120,8 +132,17 @@ void loop() {
     }
     
     // Read all sensors every 10 seconds
-    bool sensorsUpdated = readSensors(nowMillis, current);
-    
+    bool sensorsUpdated = false;
+
+    // Pick which sensor path to use
+    if (USE_MOCK_DATA) {
+        current = readMockSensors(nowMillis);   // phased simulation
+        sensorsUpdated = true;                  // always true to trigger rules
+    } else {
+        sensorsUpdated = readSensors(nowMillis, current); // real (or per-sensor mock)
+    }
+    lcd_display_update(current); // Update LCD with latest sensor data
+
     // Apply rules when sensors are updated, commands change, or float switch changes
     if (sensorsUpdated || commandsChanged || is_float_switch_triggered()) {
         // 1️⃣ Apply AUTO mode logic: ESP32 overwrites values for AUTO actuators
@@ -145,7 +166,7 @@ void loop() {
         processRetry();
     }
 
-    // Firebase updates (only if WiFi is connected)
+    
     static unsigned long lastLiveUpdate = 0;
     static unsigned long lastBatchLog = 0;
     const unsigned long liveInterval = 10000;  // 10 seconds - matches sensor reading
@@ -192,6 +213,7 @@ void initAllModules() {
     dht_sensor_init();
     float_switch_init();
     relay_control_init(); 
+    lcd_init();
     Serial.println("✅ All modules initialized successfully.");
 }
 
@@ -209,7 +231,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     bool updated = false;
 
     // --- Water Temp ---
-    float temp = USE_MOCK_DATA ? 
+    float temp = USE_WATERTEMP_MOCK ? 
         25.0 + (rand() % 100) / 10.0 : read_waterTemp();
     
     if (!isnan(temp) && temp > -50.0f && temp < 100.0f) {
@@ -221,7 +243,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- pH ---
-    float ph = USE_MOCK_DATA ? 
+    float ph = USE_PH_MOCK ? 
         6.5 + (rand() % 50) / 10.0 : read_ph(data.waterTemp);
     
     if (!isnan(ph) && ph > -2.0f && ph < 16.0f) {
@@ -237,7 +259,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- Dissolved Oxygen ---
-    float doValue = USE_MOCK_DATA ? 
+    float doValue = USE_DO_MOCK ? 
         5.0 + (rand() % 40) / 10.0 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
     
     if (!isnan(doValue) && doValue >= -5.0f && doValue < 25.0f) {
@@ -249,7 +271,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- Turbidity ---
-    float turbidity = USE_MOCK_DATA ? 
+    float turbidity = USE_TURBIDITY_MOCK ? 
         (rand() % 1000) / 10.0 : read_turbidity();
     
     if (!isnan(turbidity) && turbidity >= -100.0f && turbidity < 3000.0f) {
@@ -263,7 +285,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     // --- DHT (Air Temp & Humidity) ---
     float airTemp, airHumidity;
     
-    if (USE_MOCK_DATA) {
+    if (USE_DHT_MOCK) {
         airTemp = 20.0 + (rand() % 150) / 10.0;
         airHumidity = 40.0 + (rand() % 600) / 10.0;
     } else {
@@ -284,7 +306,13 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- Float Switch ---
-    bool floatState = float_switch_active();
+    bool floatState;
+    if (USE_FLOATSWITCH_MOCK) {
+        floatState = false;  // default safe state so valve doesn’t open
+    } else {
+        floatState = float_switch_active();
+    }
+
     if (floatState != lastFloatState) {
         data.floatTriggered = floatState;
         Serial.printf("💧 Float Switch: %s\n", floatState ? "TRIGGERED" : "NORMAL");
@@ -300,4 +328,42 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
     
     return updated;
+}
+
+
+
+// Simple phase-based mock
+RealTimeData readMockSensors(unsigned long nowMillis) {
+    static int phase = 0;
+    RealTimeData data;
+
+    // Phase 0-2: Normal conditions
+    if (phase < 2) {
+        data.waterTemp = 28.0;  // safe
+        data.pH = 7.0;
+        data.dissolvedOxygen = 7.5;
+        data.turbidityNTU = 20.0;
+        data.airTemp = 26.0;
+        data.airHumidity = 60.0;
+        data.floatTriggered = false;
+    }
+    // Phase 3: Overheat/high humidity → should trigger FAN
+    else if (phase == 2) {
+        data = {28.0, 7.0, 7.5, 20.0, 32.0, 95.0, false, {}}; 
+    }
+    // Phase 4: Back to normal → fan should stay ON until min runtime expires
+    else {
+        data = {28.0, 7.0, 7.5, 20.0, 25.0, 65.0, false, {}}; 
+    }
+
+
+    // Advance slowly, not every loop
+    static unsigned long lastSwitch = 0;
+    if (nowMillis - lastSwitch > 15000) {  // switch every 15s
+        phase++;
+        if (phase > 3) phase = 0;  // loop phases
+        lastSwitch = nowMillis;
+    }
+
+    return data;
 }

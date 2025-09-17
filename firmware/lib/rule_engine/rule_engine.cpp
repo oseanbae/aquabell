@@ -130,8 +130,8 @@ void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned l
     static unsigned long floatLowSince = 0;
     static unsigned long floatHighSince = 0;
     static unsigned long valveOpenSince = 0;
-    
-    // Update debounce timers
+    static bool prevValve = false;
+
     if (waterLevelLow) {
         if (floatLowSince == 0) floatLowSince = nowMillis;
         floatHighSince = 0;
@@ -139,32 +139,43 @@ void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned l
         if (floatHighSince == 0) floatHighSince = nowMillis;
         floatLowSince = 0;
     }
-    
+
     bool debouncedLow = waterLevelLow && (nowMillis - floatLowSince >= FLOAT_LOW_DEBOUNCE_MS);
     bool debouncedHigh = !waterLevelLow && (nowMillis - floatHighSince >= FLOAT_HIGH_DEBOUNCE_MS);
-    
-    // Start refill
+
     if (debouncedLow && !actuators.valve) {
         actuators.valve = true;
         valveOpenSince = nowMillis;
         Serial.println("[RULE_ENGINE] 🚰 Valve AUTO OPEN — low water detected");
     }
-    
-    // Stop refill
+
     if (actuators.valve) {
         bool timeout = (nowMillis - valveOpenSince >= VALVE_MAX_OPEN_MS);
         if (debouncedHigh || timeout) {
             actuators.valve = false;
             valveOpenSince = 0;
-            Serial.printf("[RULE_ENGINE] 🚰 Valve AUTO CLOSED — %s\n",
-                         timeout ? "timeout" : "water full");
+            Serial.printf("[RULE_ENGINE] 🚰 Valve AUTO CLOSED — %s\n", timeout ? "timeout" : "water full");
         }
+    }
+
+    if (actuators.valve != prevValve) {
+        control_valve(actuators.valve);
+        prevValve = actuators.valve;
     }
 }
 
 void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis) {
     static unsigned long lastToggle = 0;
-    
+    static bool initialized = false;
+
+    // First initialization (boot-safe)
+    if (!initialized) {
+        // Start OFF by default but align lastToggle so it can toggle ON soon
+        actuators.pump = false;
+        lastToggle = nowMillis - (PUMP_OFF_DURATION * 60 * 1000UL);
+        initialized = true;
+    }
+
     // Safety: turn OFF if float switch is low
     if (waterLevelLow) {
         if (actuators.pump) {
@@ -173,19 +184,10 @@ void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned lo
         }
         return;
     }
-    
-    // First run: start the ON cycle immediately
-    if (lastToggle == 0) {
-        actuators.pump = true;
-        lastToggle = nowMillis;
-        Serial.println("[RULE_ENGINE] 💧 Pump ON — first run");
-        return;
-    }
-    
-    // Scheduled cycle: ON/OFF durations
-    const unsigned long ON_DURATION = PUMP_ON_DURATION * 60 * 1000UL; // Convert minutes to ms
+
+    const unsigned long ON_DURATION = PUMP_ON_DURATION * 60 * 1000UL;
     const unsigned long OFF_DURATION = PUMP_OFF_DURATION * 60 * 1000UL;
-    
+
     if (actuators.pump && (nowMillis - lastToggle >= ON_DURATION)) {
         actuators.pump = false;
         lastToggle = nowMillis;
@@ -199,67 +201,72 @@ void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned lo
 
 void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis) {
     if (isnan(airTemp) || isnan(humidity)) return;
-    
+
     static unsigned long fanOnSince = 0;
-    
-    // Thresholds
+    static bool prevFan = false; // prevent redundant relay calls
+
     bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;
     bool tempLow = airTemp < TEMP_OFF_THRESHOLD;
     bool humHigh = humidity > HUMIDITY_ON_THRESHOLD;
     bool humLow = humidity < HUMIDITY_OFF_THRESHOLD;
     bool emergency = airTemp >= TEMP_EMERGENCY;
-    
-    // Decisions
+
     bool shouldOn = (!actuators.fan) && (emergency || tempHigh || humHigh);
     bool shouldOff = actuators.fan && tempLow && humLow;
-    
-    // Safety: max runtime
+
     if (actuators.fan && (nowMillis - fanOnSince >= FAN_MAX_CONTINUOUS_MS)) {
         shouldOff = true;
     }
-    
-    // Apply state
+
     if (shouldOn) {
         actuators.fan = true;
         fanOnSince = nowMillis;
-        Serial.printf("[RULE_ENGINE] 🌀 Fan AUTO ON — T=%.1f°C, H=%.1f%%\n",
-                     airTemp, humidity);
+        Serial.printf("[RULE_ENGINE] 🌀 Fan AUTO ON — T=%.1f°C, H=%.1f%%\n", airTemp, humidity);
     } else if (shouldOff && (nowMillis - fanOnSince >= FAN_MINUTE_RUNTIME)) {
         actuators.fan = false;
         Serial.println("[RULE_ENGINE] ✅ Fan AUTO OFF — Normalized or safety limit");
     }
+
+    // Apply only if changed
+    if (actuators.fan != prevFan) {
+        control_fan(actuators.fan);
+        prevFan = actuators.fan;
+    }
 }
 
+
 void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis) {
-    // Check if time is available for schedule-based control
+    static bool prevLight = false;
+
     if (isTimeAvailable()) {
         struct tm timeinfo;
         if (getLocalTm(timeinfo)) {
             int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
-            
-            // Schedule: ON during morning or evening window
+
             bool shouldBeOn = (currentMinutes >= LIGHT_MORNING_ON && currentMinutes < LIGHT_MORNING_OFF) ||
-                            (currentMinutes >= LIGHT_EVENING_ON && currentMinutes < LIGHT_EVENING_OFF);
-            
+                              (currentMinutes >= LIGHT_EVENING_ON && currentMinutes < LIGHT_EVENING_OFF);
+
             if (shouldBeOn && !actuators.light) {
                 actuators.light = true;
-                Serial.printf("[RULE_ENGINE] 💡 Light AUTO ON — time %02d:%02d\n", 
-                             timeinfo.tm_hour, timeinfo.tm_min);
+                Serial.printf("[RULE_ENGINE] 💡 Light AUTO ON — %02d:%02d\n", timeinfo.tm_hour, timeinfo.tm_min);
             } else if (!shouldBeOn && actuators.light) {
                 actuators.light = false;
-                Serial.printf("[RULE_ENGINE] 💡 Light AUTO OFF — time %02d:%02d\n", 
-                             timeinfo.tm_hour, timeinfo.tm_min);
+                Serial.printf("[RULE_ENGINE] 💡 Light AUTO OFF — %02d:%02d\n", timeinfo.tm_hour, timeinfo.tm_min);
             }
-            return;
+        }
+    } else {
+        if (actuators.light) {
+            actuators.light = false;
+            Serial.println("[RULE_ENGINE] 💡 Light AUTO OFF — No time available");
         }
     }
-    
-    // Fallback: lights OFF by default (safety)
-    if (actuators.light) {
-        actuators.light = false;
-        Serial.println("[RULE_ENGINE] 💡 Light AUTO OFF — No time schedule available");
+
+    if (actuators.light != prevLight) {
+        control_light(actuators.light);
+        prevLight = actuators.light;
     }
 }
+
 
 // ===== LEGACY FUNCTIONS (for backward compatibility) =====
 
