@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -151,9 +152,19 @@ bool processRetry() {
                   retryState.attemptCount, retryState.maxRetries,
                   retryState.isRelaySync ? "relay sync" : "RTDB");
 
+    // Check WiFi connection before retry
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[Retry] WiFi not connected, skipping retry");
+        retryState.isRetrying = false;
+        return false;
+    }
+
     WiFiClientSecure client;
     client.setInsecure();
+    client.setTimeout(10000); // 10 second timeout
+    
     HTTPClient https;
+    https.setTimeout(10000); // 10 second timeout
     https.begin(client, retryState.url);
     https.addHeader("Content-Type", "application/json");
 
@@ -163,19 +174,19 @@ bool processRetry() {
     if (httpResponseCode == 200) {
         Serial.printf("[Retry] ✅ Success on attempt %d\n", retryState.attemptCount);
         retryState.isRetrying = false;
-        https.end();
-        return false; // Retry completed successfully
     } else {
         String response = https.getString();
         Serial.printf("[Retry] Failed: %s\n", https.errorToString(httpResponseCode).c_str());
         Serial.printf("[Retry] Response body: %s\n", response.c_str());
-        https.end();
         
         // Continue retrying if we haven't exceeded max attempts
         if (retryState.attemptCount < retryState.maxRetries) {
             Serial.printf("[Retry] Will retry in %lu ms\n", retryState.retryInterval);
         }
     }
+    
+    // Always end the connection to free memory
+    https.end();
 
     return true; // Retry still in progress
 }
@@ -186,16 +197,15 @@ bool isRetryInProgress() {
 }
 
 void pushToFirestoreLive(const RealTimeData &data) {
-    // If a retry is already in progress, don't start a new push
-    if (isRetryInProgress()) {
-        Serial.println("[FIRESTORE] Retry in progress, skipping pushToFirestoreLive");
+    // Simplified version - minimal error checking
+    if (WiFi.status() != WL_CONNECTED) {
         return;
     }
 
-    // Check and refresh token before Firestore call
+    // Skip if token is expired - don't try to refresh to avoid crashes
     if (millis() > tokenExpiryTime) {
-        Serial.println("[FIRESTORE] Token expired, refreshing before pushToFirestoreLive");
-        refreshIdToken();
+        Serial.println("[FIRESTORE] Token expired, skipping update");
+        return;
     }
 
     String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/live_data/" DEVICE_ID;
@@ -211,14 +221,19 @@ void pushToFirestoreLive(const RealTimeData &data) {
     if (!isnan(data.airTemp)) fields["airTemp"]["doubleValue"] = data.airTemp;
     if (!isnan(data.airHumidity)) fields["airHumidity"]["doubleValue"] = data.airHumidity;
     fields["floatTriggered"]["booleanValue"] = data.floatTriggered;
+    // 🔑 Force update trigger: add timestamp
+    fields["timestamp"]["integerValue"] = time(nullptr);
 
     String payload;
     serializeJson(doc, payload);
 
-    // Attempt the PATCH request
+    // Attempt the PATCH request with proper error handling
     WiFiClientSecure client;
     client.setInsecure();
+    client.setTimeout(10000); // 10 second timeout
+    
     HTTPClient https;
+    https.setTimeout(10000); // 10 second timeout
     https.begin(client, url);
     https.addHeader("Content-Type", "application/json");
     https.addHeader("Authorization", "Bearer " + idToken);
@@ -228,18 +243,20 @@ void pushToFirestoreLive(const RealTimeData &data) {
 
     if (httpResponseCode == 200) {
         Serial.println("[FIRESTORE] Live data updated successfully");
-        https.end();
     } else {
         String response = https.getString();
         Serial.printf("[FIRESTORE] Update failed: %s\n", https.errorToString(httpResponseCode).c_str());
         Serial.printf("[FIRESTORE] Response body: %s\n", response.c_str());
-        https.end();
         
         // Initialize non-blocking retry instead of blocking delay
         Serial.println("[FIRESTORE] Initializing non-blocking retry for live data push");
         initRetryState(url, payload, false); // false indicates this is not a relay sync operation
     }
+    
+    // Always end the connection to free memory
+    https.end();
 }
+
 
 void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
     // Check and refresh token before Firestore call
@@ -587,4 +604,3 @@ void syncRelayState(const RealTimeData &data, const Commands& commands) {
         initRetryState(url, payload, true); // true indicates this is a relay sync operation
     }
 }
-
