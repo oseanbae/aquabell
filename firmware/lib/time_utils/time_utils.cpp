@@ -62,7 +62,6 @@ bool syncTimeOncePerBoot(unsigned long timeoutMs) {
     }
     
     if (success) {
-        time_t now = time(nullptr);
         struct tm timeinfo;
         if (getLocalTime(&timeinfo)) {
             timeSynced = true;

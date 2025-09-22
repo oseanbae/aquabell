@@ -57,58 +57,51 @@ void connectWiFi() {
 void setup() {
     Serial.begin(115200);
     delay(1000);
+
     Serial.println("🚀 AquaBell System Starting...");
 
     analogReadResolution(12);
     analogSetAttenuation(ADC_11db);
 
-    // Initialize NTP time sync
-    Serial.println("🕐 Initializing NTP time sync...");
-    bool timeSyncSuccess = syncTimeOncePerBoot(20000); // 20 second timeout
-    
-    if (timeSyncSuccess) {
-        Serial.println("✅ Time sync successful - schedule-based actions enabled");
-    } else {
-        Serial.println("⚠️ Time sync failed - schedule-based actions suspended until time available");
-    }
+    initAllModules();
 
-    // Non-blocking WiFi connection
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    // === WiFi Connection ===
     Serial.print("Connecting to WiFi...");
-    
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+
     int wifiAttempts = 0;
     while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20) {
         delay(500);
+        yield(); // prevent watchdog reset
         Serial.print(".");
         wifiAttempts++;
     }
-    
+
     if (WiFi.status() == WL_CONNECTED) {
         Serial.println(" connected.");
+
         firebaseSignIn();
-        
-        // If time sync failed during setup, try again now that WiFi is connected
-        if (!timeSyncSuccess) {
-            Serial.println("🕐 Retrying time sync now that WiFi is connected...");
-            timeSyncSuccess = syncTimeOncePerBoot(10000); // Shorter timeout for retry
-            if (timeSyncSuccess) {
-                Serial.println("✅ Time sync successful on retry - schedule-based actions enabled");
-            }
+
+        // Time sync now that WiFi is connected
+        Serial.println("🕐 Initializing NTP time sync...");
+        bool timeSyncSuccess = syncTimeOncePerBoot(10000); // shorter timeout
+
+        if (timeSyncSuccess) {
+            Serial.println("✅ Time sync successful - schedule-based actions enabled");
+        } else {
+            Serial.println("⚠️ Time sync failed - schedule-based actions suspended until time available");
         }
     } else {
         Serial.println(" failed. Continuing without WiFi.");
     }
-
-    initAllModules();
-    
     Serial.println("✅ System initialization complete.");
 }
+
 
 // === LOOP ===
 void loop() {
     unsigned long nowMillis = millis();
 
-    
     // Non-blocking WiFi check
     if (WiFi.status() != WL_CONNECTED) {
         static unsigned long lastWiFiAttempt = 0;
@@ -118,43 +111,40 @@ void loop() {
             lastWiFiAttempt = nowMillis;
         }
     }
-    
+
     // Periodic time sync (every 24 hours when WiFi is available)
     periodicTimeSync();
 
     // Poll RTDB commands every 1 second for real-time control
     static unsigned long lastRTDBPoll = 0;
     bool commandsChanged = false;
-    
     if (WiFi.status() == WL_CONNECTED && nowMillis - lastRTDBPoll >= RTDB_POLL_INTERVAL) {
         commandsChanged = fetchCommandsFromRTDB(currentCommands);
         lastRTDBPoll = nowMillis;
     }
-    
+
     // Read all sensors every 10 seconds
     bool sensorsUpdated = false;
+    sensorsUpdated = readSensors(nowMillis, current);
 
-    // Pick which sensor path to use
-    if (USE_MOCK_DATA) {
-        current = readMockSensors(nowMillis);   // phased simulation
-        sensorsUpdated = true;                  // always true to trigger rules
-    } else {
-        sensorsUpdated = readSensors(nowMillis, current); // real (or per-sensor mock)
-    }
-    lcd_display_update(current); // Update LCD with latest sensor data
+    // Update LCD with latest sensor data
+    lcd_display_update(current);
 
     // Apply rules when sensors are updated, commands change, or float switch changes
     if (sensorsUpdated || commandsChanged || is_float_switch_triggered()) {
+        // Update LCD with latest sensor data
+        lcd_display_update(current);
+        
         // 1️⃣ Apply AUTO mode logic: ESP32 overwrites values for AUTO actuators
         // 2️⃣ Apply MANUAL mode logic: Use values from RTDB for MANUAL actuators
         applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
-        
+
         // Update relay states in RealTimeData for compatibility
-        current.relayStates.fan = actuators.fan;
-        current.relayStates.light = actuators.light;
+        current.relayStates.fan       = actuators.fan;
+        current.relayStates.light     = actuators.light;
         current.relayStates.waterPump = actuators.pump;
-        current.relayStates.valve = actuators.valve;
-        
+        current.relayStates.valve     = actuators.valve;
+
         // 3️⃣ Always sync AUTO actuator values to RTDB (non-blocking)
         if (WiFi.status() == WL_CONNECTED) {
             syncRelayState(current, currentCommands);
@@ -166,12 +156,13 @@ void loop() {
         processRetry();
     }
 
-    
     static unsigned long lastLiveUpdate = 0;
-    static unsigned long lastBatchLog = 0;
-    const unsigned long liveInterval = 10000;  // 10 seconds - matches sensor reading
-    const unsigned long batchInterval = 600000; // 10 minutes
-    const int batchSize = 60; // 60 readings = 10 minutes of data
+    static unsigned long lastBatchLog   = 0;
+
+    const unsigned long liveInterval  = 10000;   // 10 seconds - matches sensor reading
+    const unsigned long batchInterval = 600000;  // 10 minutes
+    const int batchSize               = 60;      // 60 readings = 10 minutes of data
+
     static RealTimeData logBuffer[batchSize];
     static int logIndex = 0;
 
@@ -179,13 +170,14 @@ void loop() {
         // Live push every 10 seconds (synchronized with sensor readings)
         if (nowMillis - lastLiveUpdate >= liveInterval) {
             // 1️⃣ Push only live sensor data to Firestore
-            pushToFirestoreLive(current);  // Only fields: waterTemp, pH, dissolvedOxygen, turbidityNTU, airTemp, airHumidity, floatTriggered
-            
+            // Only fields: waterTemp, pH, dissolvedOxygen, turbidityNTU,
+            // airTemp, airHumidity, floatTriggered
+            pushToFirestoreLive(current);
             lastLiveUpdate = nowMillis;
         }
 
         // Append to logBuffer only when fresh sensor data is available
-        if (sensorsUpdated) {  
+        if (sensorsUpdated) {
             logBuffer[logIndex++] = current;
         }
 
@@ -197,10 +189,11 @@ void loop() {
                 // Note: pushBatchLogToFirestore is kept for backward compatibility
                 pushBatchLogToFirestore(logBuffer, logIndex, timestamp);
             }
-            logIndex = 0;
+            logIndex   = 0;
             lastBatchLog = nowMillis;
         }
     }
+
     yield();
 }
 
@@ -329,9 +322,6 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     
     return updated;
 }
-
-
-
 // Simple phase-based mock
 RealTimeData readMockSensors(unsigned long nowMillis) {
     static int phase = 0;
