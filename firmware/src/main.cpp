@@ -23,8 +23,6 @@
 #define USE_WATERTEMP_MOCK true
 #define USE_FLOATSWITCH_MOCK true
 
-#define USE_MOCK_DATA true
-
 #define RTDB_POLL_INTERVAL 1000  // Poll RTDB every 1 second
 
 RealTimeData current = {}; // Initialize all fields to 0/false
@@ -42,7 +40,7 @@ bool readSensors(unsigned long now, RealTimeData &data);
 void displaySensorReading(const char* label, float value, const char* unit) {
     Serial.printf("[SENSOR] %s = %.2f %s\n", label, value, unit);
 }
-RealTimeData readMockSensors(unsigned long nowMillis);
+
 void connectWiFi() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print("Connecting to WiFi...");
@@ -127,9 +125,6 @@ void loop() {
     bool sensorsUpdated = false;
     sensorsUpdated = readSensors(nowMillis, current);
 
-    // Update LCD with latest sensor data
-    lcd_display_update(current);
-
     // Apply rules when sensors are updated, commands change, or float switch changes
     if (sensorsUpdated || commandsChanged || is_float_switch_triggered()) {
         // Update LCD with latest sensor data
@@ -170,8 +165,6 @@ void loop() {
         // Live push every 10 seconds (synchronized with sensor readings)
         if (nowMillis - lastLiveUpdate >= liveInterval) {
             // 1️⃣ Push only live sensor data to Firestore
-            // Only fields: waterTemp, pH, dissolvedOxygen, turbidityNTU,
-            // airTemp, airHumidity, floatTriggered
             pushToFirestoreLive(current);
             lastLiveUpdate = nowMillis;
         }
@@ -321,39 +314,4 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
     
     return updated;
-}
-// Simple phase-based mock
-RealTimeData readMockSensors(unsigned long nowMillis) {
-    static int phase = 0;
-    RealTimeData data;
-
-    // Phase 0-2: Normal conditions
-    if (phase < 2) {
-        data.waterTemp = 28.0;  // safe
-        data.pH = 7.0;
-        data.dissolvedOxygen = 7.5;
-        data.turbidityNTU = 20.0;
-        data.airTemp = 26.0;
-        data.airHumidity = 60.0;
-        data.floatTriggered = false;
-    }
-    // Phase 3: Overheat/high humidity → should trigger FAN
-    else if (phase == 2) {
-        data = {28.0, 7.0, 7.5, 20.0, 32.0, 95.0, false, {}}; 
-    }
-    // Phase 4: Back to normal → fan should stay ON until min runtime expires
-    else {
-        data = {28.0, 7.0, 7.5, 20.0, 25.0, 65.0, false, {}}; 
-    }
-
-
-    // Advance slowly, not every loop
-    static unsigned long lastSwitch = 0;
-    if (nowMillis - lastSwitch > 15000) {  // switch every 15s
-        phase++;
-        if (phase > 3) phase = 0;  // loop phases
-        lastSwitch = nowMillis;
-    }
-
-    return data;
 }

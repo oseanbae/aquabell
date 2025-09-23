@@ -34,8 +34,6 @@ struct RetryState {
 
 static RetryState retryState;
 
-// RTC instance is defined in main.cpp, we'll use it via parameter
-
 void firebaseSignIn() {
     WiFiClientSecure client;
     client.setInsecure();
