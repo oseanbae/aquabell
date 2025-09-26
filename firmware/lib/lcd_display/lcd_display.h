@@ -4,5 +4,4 @@
 #include <LiquidCrystal_I2C.h>
 
 void lcd_init();
-void lcd_display_update(const RealTimeData& sensorData);
-void lcd_display(const RealTimeData& data, int page);
+void lcd_display(const RealTimeData& sensorData);

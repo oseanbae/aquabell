@@ -128,7 +128,7 @@ void loop() {
     // Apply rules when sensors are updated, commands change, or float switch changes
     if (sensorsUpdated || commandsChanged || is_float_switch_triggered()) {
         // Update LCD with latest sensor data
-        lcd_display_update(current);
+        lcd_display(current);
         
         // 1️⃣ Apply AUTO mode logic: ESP32 overwrites values for AUTO actuators
         // 2️⃣ Apply MANUAL mode logic: Use values from RTDB for MANUAL actuators
