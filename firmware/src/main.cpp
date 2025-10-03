@@ -143,6 +143,8 @@ void loop() {
         // 3️⃣ Always sync AUTO actuator values to RTDB (non-blocking)
         if (WiFi.status() == WL_CONNECTED) {
             syncRelayState(current, currentCommands);
+            // 4️⃣ Push live sensor data immediately to Firestore (non-blocking)
+            pushToFirestoreLive(current);
         }
     }
 
@@ -151,28 +153,17 @@ void loop() {
         processRetry();
     }
 
-    static unsigned long lastLiveUpdate = 0;
+    
     static unsigned long lastBatchLog   = 0;
-
-    const unsigned long liveInterval  = 10000;   // 10 seconds - matches sensor reading
     const unsigned long batchInterval = 600000;  // 10 minutes
-    const int batchSize               = 60;      // 60 readings = 10 minutes of data
-
+    const int batchSize               = 60;      // 60 readings
     static RealTimeData logBuffer[batchSize];
     static int logIndex = 0;
 
     if (WiFi.status() == WL_CONNECTED) {
-        // Live push every 10 seconds (synchronized with sensor readings)
-        if (nowMillis - lastLiveUpdate >= liveInterval) {
-            // 1️⃣ Push only live sensor data to Firestore
-            pushToFirestoreLive(current);
-            lastLiveUpdate = nowMillis;
-        }
-
         // Append to logBuffer only when fresh sensor data is available
-        if (sensorsUpdated) {
-            logBuffer[logIndex++] = current;
-        }
+        logBuffer[logIndex++] = current;
+    
 
         // Every 10 min OR if buffer is full → push batch
         if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
@@ -186,7 +177,6 @@ void loop() {
             lastBatchLog = nowMillis;
         }
     }
-
     yield();
 }
 
@@ -217,8 +207,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     bool updated = false;
 
     // --- Water Temp ---
-    float temp = USE_WATERTEMP_MOCK ? 
-        25.0 + (rand() % 100) / 10.0 : read_waterTemp();
+    float temp = USE_WATERTEMP_MOCK ? 25.0 : read_waterTemp();
     
     if (!isnan(temp) && temp > -50.0f && temp < 100.0f) {
         data.waterTemp = temp;
@@ -229,8 +218,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- pH ---
-    float ph = USE_PH_MOCK ? 
-        6.5 + (rand() % 50) / 10.0 : read_ph(data.waterTemp);
+    float ph = USE_PH_MOCK ? 7.0 : read_ph(data.waterTemp);
     
     if (!isnan(ph) && ph > -2.0f && ph < 16.0f) {
         data.pH = ph;
@@ -245,8 +233,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- Dissolved Oxygen ---
-    float doValue = USE_DO_MOCK ? 
-        5.0 + (rand() % 40) / 10.0 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
+    float doValue = USE_DO_MOCK ? 6.5 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
     
     if (!isnan(doValue) && doValue >= -5.0f && doValue < 25.0f) {
         data.dissolvedOxygen = doValue;
@@ -257,8 +244,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- Turbidity ---
-    float turbidity = USE_TURBIDITY_MOCK ? 
-        (rand() % 1000) / 10.0 : read_turbidity();
+    float turbidity = USE_TURBIDITY_MOCK ? 20.0 : read_turbidity();
     
     if (!isnan(turbidity) && turbidity >= -100.0f && turbidity < 3000.0f) {
         data.turbidityNTU = turbidity;
@@ -270,10 +256,9 @@ bool readSensors(unsigned long now, RealTimeData &data) {
 
     // --- DHT (Air Temp & Humidity) ---
     float airTemp, airHumidity;
-    
     if (USE_DHT_MOCK) {
-        airTemp = 20.0 + (rand() % 150) / 10.0;
-        airHumidity = 40.0 + (rand() % 600) / 10.0;
+        airTemp = 27.0;
+        airHumidity = 65.0;
     } else {
         airTemp = read_dhtTemp();
         airHumidity = read_dhtHumidity();
@@ -292,12 +277,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- Float Switch ---
-    bool floatState;
-    if (USE_FLOATSWITCH_MOCK) {
-        floatState = false;  // default safe state so valve doesn’t open
-    } else {
-        floatState = float_switch_active();
-    }
+    bool floatState = USE_FLOATSWITCH_MOCK ? false : float_switch_active();
 
     if (floatState != lastFloatState) {
         data.floatTriggered = floatState;
