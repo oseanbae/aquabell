@@ -55,30 +55,27 @@
 
 // === Fan Runtime Control ====
 #define FAN_MINUTE_RUNTIME     (5UL * 60 * 1000)    // 5 min in ms
-#define FAN_MAX_CONTINUOUS_MS  (60UL * 60 * 1000)   // 1 hour safety limit
+#define FAN_MAX_CONTINUOUS_MS  (6UL * 60 * 60 * 1000)   // 1 hour safety limit
 
 // Fan Control Thresholds (with hysteresis)
 #define TEMP_ON_THRESHOLD     28.0f
 #define TEMP_OFF_THRESHOLD    26.5f
-#define HUMIDITY_ON_THRESHOLD 85.0f
-#define HUMIDITY_OFF_THRESHOLD 75.0f
+#define HUMIDITY_ON_THRESHOLD 90.0f
 #define TEMP_EMERGENCY        32.0f
 
 // === Pump Control =========
 #define PUMP_ON_DURATION       15U   // minutes
 #define PUMP_OFF_DURATION      45U   // minutes
-#define PUMP_CYCLE_DURATION    (PUMP_ON_DURATION + PUMP_OFF_DURATION)
 
-// Pump thermal override hysteresis (continuous ON when hot until cooled)
-#define WATER_TEMP_OVERRIDE_ON_C    30.0f
-#define WATER_TEMP_OVERRIDE_OFF_C   29.0f
 
+// === Lighting Control ======
+// Define lighting schedule in minutes from midnight
 #define MINUTES(h, m) ((h) * 60 + (m))
 
 #define LIGHT_MORNING_ON   MINUTES(5, 30)   // 5:30 AM
-#define LIGHT_MORNING_OFF  MINUTES(9, 0)    // 9:00 AM
-#define LIGHT_EVENING_ON   MINUTES(15, 0)   // 3:00 PM
-#define LIGHT_EVENING_OFF  MINUTES(18, 0)   // 6:00 PM
+#define LIGHT_MORNING_OFF  MINUTES(11, 0)   // 11:00 AM (Start of Siesta/Midday heat)
+#define LIGHT_EVENING_ON   MINUTES(15, 0)   // 3:00 PM (End of Siesta/Midday heat)
+#define LIGHT_EVENING_OFF  MINUTES(21, 30)  // 9:30 PM (End of total photoperiod)
 
 
 // === Float/Valve Safety =====
@@ -90,10 +87,6 @@
 #define VALVE_MAX_OPEN_MS       (30UL * 60UL * 1000UL)  // 30 minutes
 
 //=== WIFI Configuration ===
-//SHIELA'S WIFI
-// #define WIFI_SSID          "SHIBOL"
-// #define WIFI_PASS      "SPES2025_"
-
 //JP'S HOME WIFI
 #define WIFI_SSID   "meow"
 #define WIFI_PASS   "helloworld2025"

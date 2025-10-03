@@ -16,12 +16,12 @@
 
 
 // === CONSTANTS ===
-#define USE_DHT_MOCK true
+#define USE_DHT_MOCK false
 #define USE_PH_MOCK true
 #define USE_DO_MOCK true
-#define USE_TURBIDITY_MOCK true
-#define USE_WATERTEMP_MOCK true
-#define USE_FLOATSWITCH_MOCK true
+#define USE_TURBIDITY_MOCK false
+#define USE_WATERTEMP_MOCK false
+#define USE_FLOATSWITCH_MOCK false
 
 #define RTDB_POLL_INTERVAL 1000  // Poll RTDB every 1 second
 

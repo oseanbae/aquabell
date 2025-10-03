@@ -39,8 +39,8 @@ void lcd_init() {
 // Write the dynamic values in-place (no lcd.clear())
 void lcd_display(const RealTimeData& data) {
     // Row 0: "Air: xx.xC  Hum: yy.y%"
-    String airVal = "Air: " + String(data.airTemp, 1) + "C";
-    String humVal = "Hum: " + String(data.airHumidity, 1) + "%";
+    String airVal = "Air:" + String(data.airTemp, 1) + "C";
+    String humVal = "Hum:" + String(data.airHumidity) + "%";
     // Compose fixed-width left and right halves or just pad them so they don't overlap incorrectly
     // We'll reserve columns: Air block = cols 0..9 (10 chars), Hum block = cols 10..19 (10 chars)
     lcd.setCursor(0, 0);
@@ -50,7 +50,7 @@ void lcd_display(const RealTimeData& data) {
 
     // Row 1: "Water: xx.xC  pH: y.yy"
     String waterVal = "Water: " + String(data.waterTemp, 1) + "C";
-    String pHVal = "pH: " + String(data.pH, 2);
+    String pHVal = "pH: " + String(data.pH, 1);
     // Reserve Water cols 0..11 (12 chars), pH cols 12..19 (8 chars)
     lcd.setCursor(0, 1);
     lcd.print(fixedWidth(waterVal, 12));
