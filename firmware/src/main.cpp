@@ -40,7 +40,6 @@ bool readSensors(unsigned long now, RealTimeData &data);
 void displaySensorReading(const char* label, float value, const char* unit) {
     Serial.printf("[SENSOR] %s = %.2f %s\n", label, value, unit);
 }
-
 void connectWiFi() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print("Connecting to WiFi...");
@@ -153,7 +152,7 @@ void loop() {
         processRetry();
     }
 
-    
+
     static unsigned long lastBatchLog   = 0;
     const unsigned long batchInterval = 600000;  // 10 minutes
     const int batchSize               = 60;      // 60 readings
@@ -162,13 +161,13 @@ void loop() {
 
     if (WiFi.status() == WL_CONNECTED) {
         // Append to logBuffer only when fresh sensor data is available
+        if (sensorsUpdated && logIndex < batchSize) {
         logBuffer[logIndex++] = current;
-    
-
+    }
         // Every 10 min OR if buffer is full → push batch
         if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
             time_t timestamp = getUnixTime();
-            if (timestamp > 0) {
+            if (timestamp > 0 && logIndex > 0) {
                 // 2️⃣ Push aggregated 5-min averages (sensor logs) to Firestore
                 // Note: pushBatchLogToFirestore is kept for backward compatibility
                 pushBatchLogToFirestore(logBuffer, logIndex, timestamp);
@@ -192,7 +191,6 @@ void initAllModules() {
     lcd_init();
     Serial.println("✅ All modules initialized successfully.");
 }
-
 // === UNIFIED SENSOR READING (Every 10 seconds) ===
 bool readSensors(unsigned long now, RealTimeData &data) {
     static unsigned long lastSensorRead = 0;
