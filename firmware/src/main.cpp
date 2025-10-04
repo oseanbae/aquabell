@@ -23,7 +23,6 @@
 #define USE_WATERTEMP_MOCK false
 #define USE_FLOATSWITCH_MOCK false
 
-#define RTDB_POLL_INTERVAL 1000  // Poll RTDB every 1 second
 
 RealTimeData current = {}; // Initialize all fields to 0/false
 ActuatorState actuators = {}; // Initialize all actuator states to false/auto
@@ -33,6 +32,9 @@ Commands currentCommands = { // Default to AUTO mode for all actuators
     {true, false}, // pump
     {true, false}  // valve
 }; // Initialize all command fields to 0/false
+
+// Flag to trigger rule application when commands change via stream
+volatile bool commandsChangedViaStream = false;
 
 // === FORWARD DECLARATIONS ===
 void initAllModules();
@@ -79,6 +81,10 @@ void setup() {
 
         firebaseSignIn();
 
+        // Start Firebase RTDB stream for real-time commands
+        Serial.println("🔥 Starting Firebase RTDB stream...");
+        startFirebaseStream();
+
         // Time sync now that WiFi is connected
         Serial.println("🕐 Initializing NTP time sync...");
         bool timeSyncSuccess = syncTimeOncePerBoot(10000); // shorter timeout
@@ -112,20 +118,19 @@ void loop() {
     // Periodic time sync (every 24 hours when WiFi is available)
     periodicTimeSync();
 
-    // Poll RTDB commands every 1 second for real-time control
-    static unsigned long lastRTDBPoll = 0;
-    bool commandsChanged = false;
-    if (WiFi.status() == WL_CONNECTED && nowMillis - lastRTDBPoll >= RTDB_POLL_INTERVAL) {
-        commandsChanged = fetchCommandsFromRTDB(currentCommands);
-        lastRTDBPoll = nowMillis;
+    // Handle Firebase RTDB stream for real-time commands
+    if (WiFi.status() == WL_CONNECTED) {
+        handleFirebaseStream();
+        // Note: commandsChanged is now handled by the stream callback
+        // We'll trigger rule application when sensors update or float switch changes
     }
 
     // Read all sensors every 10 seconds
     bool sensorsUpdated = false;
     sensorsUpdated = readSensors(nowMillis, current);
 
-    // Apply rules when sensors are updated, commands change, or float switch changes
-    if (sensorsUpdated || commandsChanged || is_float_switch_triggered()) {
+    // Apply rules when sensors are updated, commands change via stream, or float switch changes
+    if (sensorsUpdated || commandsChangedViaStream || is_float_switch_triggered()) {
         // Update LCD with latest sensor data
         lcd_display(current);
         
@@ -145,6 +150,9 @@ void loop() {
             // 4️⃣ Push live sensor data immediately to Firestore (non-blocking)
             pushToFirestoreLive(current);
         }
+        
+        // Reset the commands changed flag after processing
+        commandsChangedViaStream = false;
     }
 
     // Process non-blocking retries for RTDB operations

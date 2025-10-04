@@ -3,6 +3,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <FirebaseClient.h>
 #include "config.h"
 #include "sensor_data.h"
 #include "relay_control.h"
@@ -19,6 +20,15 @@
 String idToken = "";
 String refreshToken = "";
 unsigned long tokenExpiryTime = 0;
+
+// FirebaseClient global objects
+WiFiClientSecure ssl_client;
+AsyncClientClass aClient;
+FirebaseApp app;
+RealtimeDatabase Database;
+bool streamConnected = false;
+unsigned long lastStreamReconnectAttempt = 0;
+const unsigned long STREAM_RECONNECT_INTERVAL = 30000; // 30 seconds
 
 // Non-blocking retry state for RTDB PATCH requests
 struct RetryState {
@@ -54,7 +64,7 @@ void firebaseSignIn() {
         idToken = doc["idToken"].as<String>();
         refreshToken = doc["refreshToken"].as<String>();
         int expiresIn = doc["expiresIn"].as<int>();
-        tokenExpiryTime = millis() + (expiresIn - 60) * 1000UL; // Refresh 1 min before expiry
+        tokenExpiryTime = millis() + (expiresIn - 180) * 1000UL; // Refresh 3 min before expiry
 
         Serial.println("[Auth] Signed in successfully.");
     } else {
@@ -423,110 +433,6 @@ bool fetchControlCommands() {
     return false;
 }
 
-bool fetchCommandsFromRTDB(Commands& commands) {
-    // Check and refresh token before RTDB call
-    if (millis() > tokenExpiryTime) {
-        Serial.println("[RTDB] Token expired, refreshing before fetchCommandsFromRTDB");
-        refreshIdToken();
-    }
-
-    String url = "https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app/commands/" DEVICE_ID ".json?auth=" + idToken;
-
-    WiFiClientSecure client;
-    client.setInsecure();
-    HTTPClient https;
-    https.begin(client, url);
-
-    int httpResponseCode = https.GET();
-    Serial.printf("[RTDB] fetchCommandsFromRTDB HTTP response: %d\n", httpResponseCode);
-    
-    if (httpResponseCode != 200) {
-        String response = https.getString();
-        Serial.printf("[RTDB] Failed to fetch commands: %s\n", https.errorToString(httpResponseCode).c_str());
-        Serial.printf("[RTDB] Response body: %s\n", response.c_str());
-        https.end();
-        return false;
-    }
-
-    String response = https.getString();
-    https.end();
-    Serial.printf("[RTDB] fetchCommandsFromRTDB response body: %s\n", response.c_str());
-
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, response);
-    if (err) {
-        Serial.printf("[RTDB] JSON parse error: %s\n", err.c_str());
-        return false;
-    }
-
-    if (doc.isNull()) {
-        Serial.println("[RTDB] No command data received");
-        return false;
-    }
-
-    // Store previous values for change detection
-    static Commands previousCommands = {};
-    bool hasChanges = false;
-
-    // Parse and check for changes
-    if (!doc["fan"].isNull()) {
-        bool newIsAuto = doc["fan"]["isAuto"].as<bool>();
-        bool newValue = doc["fan"]["value"].as<bool>();
-        
-        if (previousCommands.fan.isAuto != newIsAuto || previousCommands.fan.value != newValue) {
-            commands.fan.isAuto = newIsAuto;
-            commands.fan.value = newValue;
-            previousCommands.fan = commands.fan;
-            hasChanges = true;
-            Serial.printf("🔄 Fan command changed: isAuto=%s, value=%s\n", 
-                        newIsAuto ? "true" : "false", newValue ? "true" : "false");
-        }
-    }
-
-    if (!doc["light"].isNull()) {
-        bool newIsAuto = doc["light"]["isAuto"].as<bool>();
-        bool newValue = doc["light"]["value"].as<bool>();
-        
-        if (previousCommands.light.isAuto != newIsAuto || previousCommands.light.value != newValue) {
-            commands.light.isAuto = newIsAuto;
-            commands.light.value = newValue;
-            previousCommands.light = commands.light;
-            hasChanges = true;
-            Serial.printf("💡 Light command changed: isAuto=%s, value=%s\n", 
-                        newIsAuto ? "true" : "false", newValue ? "true" : "false");
-        }
-    }
-
-    if (!doc["pump"].isNull()) {
-        bool newIsAuto = doc["pump"]["isAuto"].as<bool>();
-        bool newValue = doc["pump"]["value"].as<bool>();
-        
-        if (previousCommands.pump.isAuto != newIsAuto || previousCommands.pump.value != newValue) {
-            commands.pump.isAuto = newIsAuto;
-            commands.pump.value = newValue;
-            previousCommands.pump = commands.pump;
-            hasChanges = true;
-            Serial.printf("🔄 Pump command changed: isAuto=%s, value=%s\n", 
-                        newIsAuto ? "true" : "false", newValue ? "true" : "false");
-        }
-    }
-
-    if (!doc["valve"].isNull()) {
-        bool newIsAuto = doc["valve"]["isAuto"].as<bool>();
-        bool newValue = doc["valve"]["value"].as<bool>();
-        
-        if (previousCommands.valve.isAuto != newIsAuto || previousCommands.valve.value != newValue) {
-            commands.valve.isAuto = newIsAuto;
-            commands.valve.value = newValue;
-            previousCommands.valve = commands.valve;
-            hasChanges = true;
-            Serial.printf("🚰 Valve command changed: isAuto=%s, value=%s\n", 
-                        newIsAuto ? "true" : "false", newValue ? "true" : "false");
-        }
-    }
-
-    return hasChanges;
-}
 
 void syncRelayState(const RealTimeData &data, const Commands& commands) {
     // If a retry is already in progress, don't start a new sync
@@ -601,4 +507,172 @@ void syncRelayState(const RealTimeData &data, const Commands& commands) {
         Serial.println("[RTDB] Initializing non-blocking retry for relay sync");
         initRetryState(url, payload, true); // true indicates this is a relay sync operation
     }
+}
+
+// ===== FIREBASECLIENT STREAM-BASED FUNCTIONS =====
+
+// Stream callback function to handle real-time command updates
+void onRTDBStream(AsyncResult &result) {
+    if (result.isEvent()) {
+        Serial.printf("Event task: %s, msg: %s, code: %d\n",
+                      result.uid().c_str(),
+                      result.appEvent().message().c_str(),
+                      result.appEvent().code());
+    }
+
+    if (result.isError()) {
+        Serial.printf("Error task: %s, msg: %s, code: %d\n",
+                      result.uid().c_str(),
+                      result.error().message().c_str(),
+                      result.error().code());
+        streamConnected = false;
+    }
+
+    if (result.available()) {
+        Serial.println("[RTDB Stream] Data updated");
+        
+        // Parse the stream data
+        String data = result.c_str();
+        Serial.printf("[RTDB Stream] Received data: %s\n", data.c_str());
+        
+        // Parse JSON and update currentCommands
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, data);
+        
+        if (err) {
+            Serial.printf("[RTDB Stream] JSON parse error: %s\n", err.c_str());
+            return;
+        }
+        
+        // External Commands struct to update (passed by reference)
+        extern Commands currentCommands;
+        bool hasChanges = false;
+        
+        // Parse and update commands
+        if (!doc["fan"].isNull()) {
+            bool newIsAuto = doc["fan"]["isAuto"].as<bool>();
+            bool newValue = doc["fan"]["value"].as<bool>();
+            
+            if (currentCommands.fan.isAuto != newIsAuto || currentCommands.fan.value != newValue) {
+                currentCommands.fan.isAuto = newIsAuto;
+                currentCommands.fan.value = newValue;
+                hasChanges = true;
+                Serial.printf("🔄 Fan command updated: isAuto=%s, value=%s\n", 
+                            newIsAuto ? "true" : "false", newValue ? "true" : "false");
+            }
+        }
+        
+        if (!doc["light"].isNull()) {
+            bool newIsAuto = doc["light"]["isAuto"].as<bool>();
+            bool newValue = doc["light"]["value"].as<bool>();
+            
+            if (currentCommands.light.isAuto != newIsAuto || currentCommands.light.value != newValue) {
+                currentCommands.light.isAuto = newIsAuto;
+                currentCommands.light.value = newValue;
+                hasChanges = true;
+                Serial.printf("💡 Light command updated: isAuto=%s, value=%s\n", 
+                            newIsAuto ? "true" : "false", newValue ? "true" : "false");
+            }
+        }
+        
+        if (!doc["pump"].isNull()) {
+            bool newIsAuto = doc["pump"]["isAuto"].as<bool>();
+            bool newValue = doc["pump"]["value"].as<bool>();
+            
+            if (currentCommands.pump.isAuto != newIsAuto || currentCommands.pump.value != newValue) {
+                currentCommands.pump.isAuto = newIsAuto;
+                currentCommands.pump.value = newValue;
+                hasChanges = true;
+                Serial.printf("🔄 Pump command updated: isAuto=%s, value=%s\n", 
+                            newIsAuto ? "true" : "false", newValue ? "true" : "false");
+            }
+        }
+        
+        if (!doc["valve"].isNull()) {
+            bool newIsAuto = doc["valve"]["isAuto"].as<bool>();
+            bool newValue = doc["valve"]["value"].as<bool>();
+            
+            if (currentCommands.valve.isAuto != newIsAuto || currentCommands.valve.value != newValue) {
+                currentCommands.valve.isAuto = newIsAuto;
+                currentCommands.valve.value = newValue;
+                hasChanges = true;
+                Serial.printf("🚰 Valve command updated: isAuto=%s, value=%s\n", 
+                            newIsAuto ? "true" : "false", newValue ? "true" : "false");
+            }
+        }
+        
+        if (hasChanges) {
+            Serial.println("[RTDB Stream] Commands updated successfully");
+            // Set flag to trigger rule application in main loop
+            extern volatile bool commandsChangedViaStream;
+            commandsChangedViaStream = true;
+        }
+    }
+}
+
+
+// Initialize and start the Firebase RTDB stream
+void startFirebaseStream() {
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[RTDB Stream] WiFi not connected, cannot start stream");
+        return;
+    }
+    
+    if (idToken == "") {
+        Serial.println("[RTDB Stream] No auth token, signing in first");
+        firebaseSignIn();
+        if (idToken == "") {
+            Serial.println("[RTDB Stream] Failed to get auth token");
+            return;
+        }
+    }
+    
+    Serial.println("[RTDB Stream] Starting Firebase RTDB stream...");
+    
+    // Initialize Firebase app with authentication
+    UserAuth user_auth(FIREBASE_API_KEY, USER_EMAIL, USER_PASSWORD, 3000);
+    initializeApp(aClient, app, getAuth(user_auth), onRTDBStream, "authTask");
+    
+    // Get RealtimeDatabase instance
+    app.getApp<RealtimeDatabase>(Database);
+    Database.url("https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app");
+    
+    // Start listening to the commands path
+    String path = "/commands/" DEVICE_ID;
+    Database.get(aClient, path, onRTDBStream, "streamTask");
+    
+    Serial.println("[RTDB Stream] Stream started successfully");
+    streamConnected = true;
+    lastStreamReconnectAttempt = millis();
+}
+
+// Handle Firebase stream - must be called in loop()
+void handleFirebaseStream() {
+    // Check WiFi connection first
+    if (WiFi.status() != WL_CONNECTED) {
+        if (streamConnected) {
+            Serial.println("[RTDB Stream] WiFi disconnected, marking stream as disconnected");
+            streamConnected = false;
+        }
+        return;
+    }
+    
+    if (!streamConnected) {
+        // Try to reconnect if enough time has passed
+        unsigned long now = millis();
+        if (now - lastStreamReconnectAttempt >= STREAM_RECONNECT_INTERVAL) {
+            Serial.println("[RTDB Stream] Attempting to reconnect stream...");
+            startFirebaseStream();
+        }
+        return;
+    }
+    
+    // Process Firebase app and database loops
+    app.loop();
+    Database.loop();
+}
+
+// Check if the Firebase stream is currently connected
+bool isStreamConnected() {
+    return streamConnected;
 }

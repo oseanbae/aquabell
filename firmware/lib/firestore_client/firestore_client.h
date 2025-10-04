@@ -2,6 +2,8 @@
 #include "sensor_data.h"
 #include <Arduino.h>
 #include <time.h>
+#include <FirebaseClient.h>
+#include <WiFiClientSecure.h>
 
 // Command structure for RTDB
 struct CommandState {
@@ -20,8 +22,13 @@ void pushToFirestoreLive(const RealTimeData &data);
 void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp);
 void firebaseSignIn();
 bool fetchControlCommands();
-bool fetchCommandsFromRTDB(Commands& commands);
 void syncRelayState(const RealTimeData &data, const Commands& commands);
+
+// New FirebaseClient stream-based functions
+void startFirebaseStream();
+void handleFirebaseStream();
+void onRTDBStream(AsyncResult &result);
+bool isStreamConnected();
 
 // Non-blocking retry management
 bool processRetry();
