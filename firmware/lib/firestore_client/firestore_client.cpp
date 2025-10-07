@@ -213,6 +213,39 @@ bool isRetryInProgress() {
     return retryState.isRetrying;
 }
 
+// ===== Helpers for RTDB Stream SSE payloads =====
+// Extract JSON from Server-Sent Events style payloads like:
+// "event: patch\ndata: {\"path\":\"/pump\",\"data\":{...}}"
+static bool extractSSEJson(const String &rawPayload, String &outJson) {
+    String s = rawPayload;
+    s.trim();
+    if (s.startsWith("{") || s.startsWith("[")) {
+        outJson = s;
+        return true;
+    }
+
+    int lastIdx = -1;
+    int searchFrom = -1;
+    // Find the last occurrence of "data:" which should hold the JSON
+    while (true) {
+        int idx = s.indexOf("data:", searchFrom + 1);
+        if (idx == -1) break;
+        lastIdx = idx;
+        searchFrom = idx;
+    }
+
+    if (lastIdx != -1) {
+        int start = lastIdx + 5; // skip 'data:'
+        // skip one optional space
+        while (start < (int)s.length() && s[start] == ' ') start++;
+        outJson = s.substring(start);
+        outJson.trim();
+        return outJson.length() > 0;
+    }
+
+    return false;
+}
+
 void pushToFirestoreLive(const RealTimeData &data) {
     // Simplified version - minimal error checking
     if (WiFi.status() != WL_CONNECTED) {
@@ -406,6 +439,8 @@ bool fetchControlCommands() {
     }
 
     bool anyManualControl = false;
+    // Update in-memory commands so rule engine respects modes immediately
+    extern Commands currentCommands;
 
     // Check each actuator individually
     const char* actuators[] = {"fan", "light", "pump", "valve"};
@@ -422,6 +457,21 @@ bool fetchControlCommands() {
                 
                 Serial.printf("[Control] %s isAuto=%s value=%s\n", 
                              actuator, isAuto ? "true" : "false", value ? "true" : "false");
+
+                // Persist into currentCommands for rule engine gating
+                if (strcmp(actuator, "fan") == 0) {
+                    currentCommands.fan.isAuto = isAuto;
+                    currentCommands.fan.value = value;
+                } else if (strcmp(actuator, "light") == 0) {
+                    currentCommands.light.isAuto = isAuto;
+                    currentCommands.light.value = value;
+                } else if (strcmp(actuator, "pump") == 0) {
+                    currentCommands.pump.isAuto = isAuto;
+                    currentCommands.pump.value = value;
+                } else if (strcmp(actuator, "valve") == 0) {
+                    currentCommands.valve.isAuto = isAuto;
+                    currentCommands.valve.value = value;
+                }
                 
                 if (!isAuto) { // Manual mode when isAuto is false
                     controlFunctions[i](value);
@@ -632,8 +682,15 @@ void onRTDBStream(AsyncResult &result) {
         }
 
         // Get the raw data from the stream
-        String data = result.c_str();
-        Serial.printf("[RTDB Stream] Received data: %s\n", data.c_str());
+        String raw = result.c_str();
+        Serial.printf("[RTDB Stream] Received data: %s\n", raw.c_str());
+
+        // Normalize to pure JSON (strip SSE framing if present)
+        String data;
+        if (!extractSSEJson(raw, data)) {
+            Serial.println("[RTDB Stream] Unable to extract JSON from SSE payload; ignoring");
+            return;
+        }
 
         // External Commands struct to update (passed by reference)
         extern Commands currentCommands;
@@ -688,8 +745,38 @@ void onRTDBStream(AsyncResult &result) {
                 return;
             }
 
-            // Normalize known component paths
-            if (changedPath.startsWith("/fan")) {
+            // Normalize known component paths, including root-level patches
+            if (changedPath == "/" && changedData.is<JsonObject>()) {
+                Serial.println("[RTDB Stream] Root-level patch received");
+                JsonObject rootObj = changedData.as<JsonObject>();
+                auto handleAct = [&](const char* name){
+                    // Support either nested object {"pump": {"isAuto": false}} or flattened key {"pump/value": true}
+                    if (!rootObj[name].isNull()) {
+                        JsonDocument obj; obj.set(rootObj[name]);
+                        processPatchEvent(String("/") + name, obj, currentCommands, hasChanges);
+                    }
+                    String valueKey = String(name) + "/value";
+                    String isAutoKey = String(name) + "/isAuto";
+                    if (!rootObj[valueKey].isNull() || !rootObj[isAutoKey].isNull()) {
+                        JsonDocument obj;
+                        if (!rootObj[valueKey].isNull()) obj["value"] = rootObj[valueKey].as<bool>();
+                        if (!rootObj[isAutoKey].isNull()) obj["isAuto"] = rootObj[isAutoKey].as<bool>();
+                        processPatchEvent(String("/") + name, obj, currentCommands, hasChanges);
+                    }
+                };
+                handleAct("fan");
+                handleAct("light");
+                handleAct("pump");
+                handleAct("valve");
+                // Apply manual overrides if any
+                applyManualIfNeeded();
+                if (!initialCommandsSynced) {
+                    initialCommandsSynced = true;
+                    needResyncOnReconnect = false;
+                    Serial.println("[RTDB Stream] ✅ Initial commands synced via root patch");
+                }
+            }
+            else if (changedPath.startsWith("/fan")) {
                 if (changedPath.endsWith("/isAuto")) {
                     bool newIsAuto = changedData.as<bool>();
                     if (currentCommands.fan.isAuto != newIsAuto) {
@@ -821,6 +908,9 @@ void onRTDBStream(AsyncResult &result) {
             // Set flag to trigger rule application in main loop
             extern volatile bool commandsChangedViaStream;
             commandsChangedViaStream = true;
+            // Debounce immediate write-back in main loop
+            extern unsigned long lastStreamUpdate;
+            lastStreamUpdate = millis();
         }
     }
 }

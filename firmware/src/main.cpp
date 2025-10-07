@@ -160,7 +160,7 @@ void loop() {
         current.relayStates.valve     = actuators.valve;
 
         // ✅ Only sync after Firebase and commands are ready
-        if (wifiUp && fbReady && cmdsSynced) {
+        if (wifiUp && fbReady && cmdsSynced) {  
         // 🧠 Prevent immediate echo after RTDB stream change
         if (millis() - lastStreamUpdate > 2000) {
             syncRelayState(current, currentCommands);
