@@ -32,6 +32,10 @@ const unsigned long STREAM_RECONNECT_INTERVAL = 30000; // 30 seconds
 static bool firebaseAppInitialized = false;
 static bool databaseConfigured = false;
 static DefaultNetwork defaultNet; // provides network_config_data for built-in WiFi
+// Readiness/sync flags
+static bool firebaseReady = false;                 // true when app.ready() once
+static bool initialCommandsSynced = false;         // true after first /commands fetch or full snapshot
+static bool needResyncOnReconnect = true;          // fetch commands when connectivity/auth returns
 
 // Non-blocking retry state for RTDB PATCH requests
 struct RetryState {
@@ -70,6 +74,7 @@ void firebaseSignIn() {
         tokenExpiryTime = millis() + (expiresIn - 180) * 1000UL; // Refresh 3 min before expiry
 
         Serial.println("[Auth] Signed in successfully.");
+        firebaseReady = true;
     } else {
         Serial.print("[Auth] Failed to sign in: ");
         Serial.println(https.errorToString(httpResponseCode));
@@ -436,14 +441,17 @@ bool fetchControlCommands() {
     return false;
 }
 
-void syncRelayState(const RealTimeData &data, const Commands& commands) {
-    // If a retry is already in progress, don't start a new sync
-    if (isRetryInProgress()) {
-        Serial.println("[RTDB] Retry in progress, skipping syncRelayState");
+void syncRelayState(const RealTimeData &data, const Commands &commands) {
+    if (!initialCommandsSynced) {
+        Serial.println("[RTDB] Skipping relay sync (initial /commands not yet synced)");
         return;
     }
 
-    // Check and refresh token before RTDB call
+    if (isRetryInProgress()) {
+        Serial.println("[RTDB] Retry in progress — skipping syncRelayState");
+        return;
+    }
+
     if (millis() > tokenExpiryTime) {
         Serial.println("[RTDB] Token expired, refreshing before syncRelayState");
         refreshIdToken();
@@ -452,66 +460,144 @@ void syncRelayState(const RealTimeData &data, const Commands& commands) {
     String url = "https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app/commands/" DEVICE_ID ".json?auth=" + idToken;
 
     JsonDocument doc;
-    
-    // Only update RTDB values for actuators that are in AUTO mode
-    // Manual actuators (isAuto == false) must not be overwritten by the ESP32
-    if (commands.fan.isAuto) {
-        doc["fan"]["value"] = data.relayStates.fan;
-        doc["fan"]["isAuto"] = true; // Ensure isAuto flag is set
-        Serial.println("[RTDB] Syncing fan state (AUTO mode)");
-    }
-    if (commands.light.isAuto) {
-        doc["light"]["value"] = data.relayStates.light;
-        doc["light"]["isAuto"] = true; // Ensure isAuto flag is set
-        Serial.println("[RTDB] Syncing light state (AUTO mode)");
-    }
-    if (commands.pump.isAuto) {
-        doc["pump"]["value"] = data.relayStates.waterPump;
-        doc["pump"]["isAuto"] = true; // Ensure isAuto flag is set
-        Serial.println("[RTDB] Syncing pump state (AUTO mode)");
-    }
-    if (commands.valve.isAuto) {
-        doc["valve"]["value"] = data.relayStates.valve;
-        doc["valve"]["isAuto"] = true; // Ensure isAuto flag is set
-        Serial.println("[RTDB] Syncing valve state (AUTO mode)");
-    }
 
-    // Check if there are any AUTO actuators to sync
+    if (commands.fan.isAuto) {
+        doc["fan/value"] = data.relayStates.fan;
+        Serial.println("[RTDB] Syncing FAN state (AUTO mode)");
+    } else Serial.println("[RTDB] Skipping FAN (manual mode)");
+
+    if (commands.light.isAuto) {
+        doc["light/value"] = data.relayStates.light;
+        Serial.println("[RTDB] Syncing LIGHT state (AUTO mode)");
+    } else Serial.println("[RTDB] Skipping LIGHT (manual mode)");
+
+    if (commands.pump.isAuto) {
+        doc["pump/value"] = data.relayStates.waterPump;
+        Serial.println("[RTDB] Syncing PUMP state (AUTO mode)");
+    } else Serial.println("[RTDB] Skipping PUMP (manual mode)");
+
+    if (commands.valve.isAuto) {
+        doc["valve/value"] = data.relayStates.valve;
+        Serial.println("[RTDB] Syncing VALVE state (AUTO mode)");
+    } else Serial.println("[RTDB] Skipping VALVE (manual mode)");
+
     if (doc.size() == 0) {
-        Serial.println("[RTDB] No AUTO actuators to sync, skipping RTDB update");
+        Serial.println("[RTDB] No AUTO actuators to sync — skipping update");
         return;
     }
 
     String payload;
     serializeJson(doc, payload);
-    Serial.printf("[RTDB] Syncing payload: %s\n", payload.c_str());
+    Serial.printf("[RTDB] Sync payload: %s\n", payload.c_str());
 
-    // Attempt the PATCH request
     WiFiClientSecure client;
     client.setInsecure();
     HTTPClient https;
     https.begin(client, url);
     https.addHeader("Content-Type", "application/json");
+    https.addHeader("Authorization", "Bearer " + idToken);
 
     int httpResponseCode = https.sendRequest("PATCH", payload);
-    Serial.printf("[RTDB] syncRelayState HTTP response: %d\n", httpResponseCode);
-    
+    Serial.printf("[RTDB] HTTP Response: %d\n", httpResponseCode);
+
     if (httpResponseCode == 200) {
-        Serial.println("[RTDB] Relay sync updated successfully");
-        https.end();
+        Serial.println("[RTDB] Relay sync successful ✅");
     } else {
         String response = https.getString();
         Serial.printf("[RTDB] Relay sync failed: %s\n", https.errorToString(httpResponseCode).c_str());
-        Serial.printf("[RTDB] Response body: %s\n", response.c_str());
-        https.end();
-        
-        // Initialize non-blocking retry instead of blocking delay
-        Serial.println("[RTDB] Initializing non-blocking retry for relay sync");
-        initRetryState(url, payload, true); // true indicates this is a relay sync operation
+        Serial.printf("[RTDB] Response: %s\n", response.c_str());
+        Serial.println("[RTDB] Scheduling non-blocking retry for relay sync");
+        initRetryState(url, payload, true);
     }
+
+    https.end();
 }
 
+
 // ===== FIREBASECLIENT STREAM-BASED FUNCTIONS =====
+// Helper function to process Firebase patch events
+void processPatchEvent(const String& dataPath, JsonDocument& patchData, Commands& currentCommands, bool& hasChanges) {
+    // Determine which component was updated based on the path
+    if (dataPath == "/fan") {
+        // Update fan command
+        if (!patchData["isAuto"].isNull()) {
+            bool newIsAuto = patchData["isAuto"].as<bool>();
+            if (currentCommands.fan.isAuto != newIsAuto) {
+                currentCommands.fan.isAuto = newIsAuto;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Fan isAuto: %s\n", newIsAuto ? "true" : "false");
+            }
+        }
+        if (!patchData["value"].isNull()) {
+            bool newValue = patchData["value"].as<bool>();
+            if (currentCommands.fan.value != newValue) {
+                currentCommands.fan.value = newValue;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Fan value: %s\n", newValue ? "true" : "false");
+            }
+        }
+    }
+    else if (dataPath == "/light") {
+        // Update light command
+        if (!patchData["isAuto"].isNull()) {
+            bool newIsAuto = patchData["isAuto"].as<bool>();
+            if (currentCommands.light.isAuto != newIsAuto) {
+                currentCommands.light.isAuto = newIsAuto;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Light isAuto: %s\n", newIsAuto ? "true" : "false");
+            }
+        }
+        if (!patchData["value"].isNull()) {
+            bool newValue = patchData["value"].as<bool>();
+            if (currentCommands.light.value != newValue) {
+                currentCommands.light.value = newValue;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Light value: %s\n", newValue ? "true" : "false");
+            }
+        }
+    }
+    else if (dataPath == "/pump") {
+        // Update pump command
+        if (!patchData["isAuto"].isNull()) {
+            bool newIsAuto = patchData["isAuto"].as<bool>();
+            if (currentCommands.pump.isAuto != newIsAuto) {
+                currentCommands.pump.isAuto = newIsAuto;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Pump isAuto: %s\n", newIsAuto ? "true" : "false");
+            }
+        }
+        if (!patchData["value"].isNull()) {
+            bool newValue = patchData["value"].as<bool>();
+            if (currentCommands.pump.value != newValue) {
+                currentCommands.pump.value = newValue;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Pump value: %s\n", newValue ? "true" : "false");
+            }
+        }
+    }
+    else if (dataPath == "/valve") {
+        // Update valve command
+        if (!patchData["isAuto"].isNull()) {
+            bool newIsAuto = patchData["isAuto"].as<bool>();
+            if (currentCommands.valve.isAuto != newIsAuto) {
+                currentCommands.valve.isAuto = newIsAuto;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Valve isAuto: %s\n", newIsAuto ? "true" : "false");
+            }
+        }
+        if (!patchData["value"].isNull()) {
+            bool newValue = patchData["value"].as<bool>();
+            if (currentCommands.valve.value != newValue) {
+                currentCommands.valve.value = newValue;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Valve value: %s\n", newValue ? "true" : "false");
+            }
+        }
+    }
+    else {
+        Serial.printf("[RTDB Stream] Unknown path: %s\n", dataPath.c_str());
+    }
+}
 
 // Stream callback function to handle real-time command updates
 void onRTDBStream(AsyncResult &result) {
@@ -532,6 +618,9 @@ void onRTDBStream(AsyncResult &result) {
             Serial.println("[RTDB Stream] Auth lost (code -106). Will re-auth and restart stream.");
         }
         streamConnected = false;
+        // Require resync when stream errors
+        initialCommandsSynced = false;
+        needResyncOnReconnect = true;
     }
 
     if (result.available()) {
@@ -541,82 +630,192 @@ void onRTDBStream(AsyncResult &result) {
             streamConnected = true;
             Serial.println("[RTDB Stream] ✅ Stream connected");
         }
-        
-        // Parse the stream data
+
+        // Get the raw data from the stream
         String data = result.c_str();
         Serial.printf("[RTDB Stream] Received data: %s\n", data.c_str());
-        
-        // Parse JSON and update currentCommands
-        JsonDocument doc;
-        DeserializationError err = deserializeJson(doc, data);
-        String data = result.c_str();
-    
+
+        // External Commands struct to update (passed by reference)
+        extern Commands currentCommands;
+        bool hasChanges = false;
+
         if (data.isEmpty() || data == "null") {
             Serial.println("[RTDB Stream] Empty or null event, ignoring...");
             return;
         }
+
+        // Parse the JSON data
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, data);
         if (err) {
             Serial.printf("[RTDB Stream] JSON parse error: %s\n", err.c_str());
             return;
         }
-        
-        // External Commands struct to update (passed by reference)
-        extern Commands currentCommands;
-        bool hasChanges = false;
-        
-        // Parse and update commands
-        if (!doc["fan"].isNull()) {
-            bool newIsAuto = doc["fan"]["isAuto"].as<bool>();
-            bool newValue = doc["fan"]["value"].as<bool>();
-            
-            if (currentCommands.fan.isAuto != newIsAuto || currentCommands.fan.value != newValue) {
-                currentCommands.fan.isAuto = newIsAuto;
-                currentCommands.fan.value = newValue;
-                hasChanges = true;
-                Serial.printf("🔄 Fan command updated: isAuto=%s, value=%s\n", 
-                            newIsAuto ? "true" : "false", newValue ? "true" : "false");
+
+        // Two possible payload shapes:
+        // 1) Full snapshot: {"fan": {..}, "light": {..}, ...}
+        // 2) Patch event:   {"path": "/pump/isAuto", "data": false}
+
+        auto applyManualIfNeeded = [&]() {
+            // When isAuto == false, immediately apply manual value to relay
+            if (!currentCommands.fan.isAuto) {
+                control_fan(currentCommands.fan.value);
+                Serial.printf("[RTDB Stream] Manual FAN applied: %s\n", currentCommands.fan.value ? "ON" : "OFF");
+            }
+            if (!currentCommands.light.isAuto) {
+                control_light(currentCommands.light.value);
+                Serial.printf("[RTDB Stream] Manual LIGHT applied: %s\n", currentCommands.light.value ? "ON" : "OFF");
+            }
+            if (!currentCommands.pump.isAuto) {
+                control_pump(currentCommands.pump.value);
+                Serial.printf("[RTDB Stream] Manual PUMP applied: %s\n", currentCommands.pump.value ? "ON" : "OFF");
+            }
+            if (!currentCommands.valve.isAuto) {
+                control_valve(currentCommands.valve.value);
+                Serial.printf("[RTDB Stream] Manual VALVE applied: %s\n", currentCommands.valve.value ? "ON" : "OFF");
+            }
+        };
+
+        if (!doc["path"].isNull()) {
+            // Patch payload
+            String changedPath = doc["path"].as<String>();
+            JsonVariant changedData = doc["data"]; // may be null on deletes
+            Serial.printf("[RTDB Stream] Patch path: %s\n", changedPath.c_str());
+
+            // If data is explicitly null (delete), ignore to avoid resetting others
+            if (changedData.isNull()) {
+                Serial.println("[RTDB Stream] Patch with null data; ignoring");
+                return;
+            }
+
+            // Normalize known component paths
+            if (changedPath.startsWith("/fan")) {
+                if (changedPath.endsWith("/isAuto")) {
+                    bool newIsAuto = changedData.as<bool>();
+                    if (currentCommands.fan.isAuto != newIsAuto) {
+                        currentCommands.fan.isAuto = newIsAuto;
+                        hasChanges = true;
+                        Serial.printf("[RTDB Stream] Fan isAuto: %s\n", newIsAuto ? "true" : "false");
+                    }
+                } else if (changedPath.endsWith("/value")) {
+                    bool newValue = changedData.as<bool>();
+                    if (currentCommands.fan.value != newValue) {
+                        currentCommands.fan.value = newValue;
+                        hasChanges = true;
+                        Serial.printf("[RTDB Stream] Fan value: %s\n", newValue ? "true" : "false");
+                    }
+                } else if (changedData.is<JsonObject>()) {
+                    JsonDocument obj;
+                    obj.set(changedData);
+                    processPatchEvent("/fan", obj, currentCommands, hasChanges);
+                }
+            } else if (changedPath.startsWith("/light")) {
+                if (changedPath.endsWith("/isAuto")) {
+                    bool newIsAuto = changedData.as<bool>();
+                    if (currentCommands.light.isAuto != newIsAuto) {
+                        currentCommands.light.isAuto = newIsAuto;
+                        hasChanges = true;
+                        Serial.printf("[RTDB Stream] Light isAuto: %s\n", newIsAuto ? "true" : "false");
+                    }
+                } else if (changedPath.endsWith("/value")) {
+                    bool newValue = changedData.as<bool>();
+                    if (currentCommands.light.value != newValue) {
+                        currentCommands.light.value = newValue;
+                        hasChanges = true;
+                        Serial.printf("[RTDB Stream] Light value: %s\n", newValue ? "true" : "false");
+                    }
+                } else if (changedData.is<JsonObject>()) {
+                    JsonDocument obj;
+                    obj.set(changedData);
+                    processPatchEvent("/light", obj, currentCommands, hasChanges);
+                }
+            } else if (changedPath.startsWith("/pump")) {
+                if (changedPath.endsWith("/isAuto")) {
+                    bool newIsAuto = changedData.as<bool>();
+                    if (currentCommands.pump.isAuto != newIsAuto) {
+                        currentCommands.pump.isAuto = newIsAuto;
+                        hasChanges = true;
+                        Serial.printf("[RTDB Stream] Pump isAuto: %s\n", newIsAuto ? "true" : "false");
+                    }
+                } else if (changedPath.endsWith("/value")) {
+                    bool newValue = changedData.as<bool>();
+                    if (currentCommands.pump.value != newValue) {
+                        currentCommands.pump.value = newValue;
+                        hasChanges = true;
+                        Serial.printf("[RTDB Stream] Pump value: %s\n", newValue ? "true" : "false");
+                    }
+                } else if (changedData.is<JsonObject>()) {
+                    JsonDocument obj;
+                    obj.set(changedData);
+                    processPatchEvent("/pump", obj, currentCommands, hasChanges);
+                }
+            } else if (changedPath.startsWith("/valve")) {
+                if (changedPath.endsWith("/isAuto")) {
+                    bool newIsAuto = changedData.as<bool>();
+                    if (currentCommands.valve.isAuto != newIsAuto) {
+                        currentCommands.valve.isAuto = newIsAuto;
+                        hasChanges = true;
+                        Serial.printf("[RTDB Stream] Valve isAuto: %s\n", newIsAuto ? "true" : "false");
+                    }
+                } else if (changedPath.endsWith("/value")) {
+                    bool newValue = changedData.as<bool>();
+                    if (currentCommands.valve.value != newValue) {
+                        currentCommands.valve.value = newValue;
+                        hasChanges = true;
+                        Serial.printf("[RTDB Stream] Valve value: %s\n", newValue ? "true" : "false");
+                    }
+                } else if (changedData.is<JsonObject>()) {
+                    JsonDocument obj;
+                    obj.set(changedData);
+                    processPatchEvent("/valve", obj, currentCommands, hasChanges);
+                }
+            } else {
+                Serial.printf("[RTDB Stream] Patch path not recognized: %s\n", changedPath.c_str());
+            }
+
+            // Apply manual overrides immediately if any
+            applyManualIfNeeded();
+
+        } else {
+            // Full snapshot payload
+            if (!doc["fan"].isNull()) {
+                Serial.println("[RTDB Stream] Processing fan update");
+                JsonDocument fanData;
+                fanData.set(doc["fan"]);
+                processPatchEvent("/fan", fanData, currentCommands, hasChanges);
+            }
+
+            if (!doc["light"].isNull()) {
+                Serial.println("[RTDB Stream] Processing light update");
+                JsonDocument lightData;
+                lightData.set(doc["light"]);
+                processPatchEvent("/light", lightData, currentCommands, hasChanges);
+            }
+
+            if (!doc["pump"].isNull()) {
+                Serial.println("[RTDB Stream] Processing pump update");
+                JsonDocument pumpData;
+                pumpData.set(doc["pump"]);
+                processPatchEvent("/pump", pumpData, currentCommands, hasChanges);
+            }
+
+            if (!doc["valve"].isNull()) {
+                Serial.println("[RTDB Stream] Processing valve update");
+                JsonDocument valveData;
+                valveData.set(doc["valve"]);
+                processPatchEvent("/valve", valveData, currentCommands, hasChanges);
+            }
+
+            // Apply manual overrides immediately if snapshot puts any device to manual
+            applyManualIfNeeded();
+            // Mark initial sync completed on first valid snapshot
+            if (!initialCommandsSynced) {
+                initialCommandsSynced = true;
+                needResyncOnReconnect = false;
+                Serial.println("[RTDB Stream] ✅ Initial commands synced via snapshot");
             }
         }
-        
-        if (!doc["light"].isNull()) {
-            bool newIsAuto = doc["light"]["isAuto"].as<bool>();
-            bool newValue = doc["light"]["value"].as<bool>();
-            
-            if (currentCommands.light.isAuto != newIsAuto || currentCommands.light.value != newValue) {
-                currentCommands.light.isAuto = newIsAuto;
-                currentCommands.light.value = newValue;
-                hasChanges = true;
-                Serial.printf("💡 Light command updated: isAuto=%s, value=%s\n", 
-                            newIsAuto ? "true" : "false", newValue ? "true" : "false");
-            }
-        }
-        
-        if (!doc["pump"].isNull()) {
-            bool newIsAuto = doc["pump"]["isAuto"].as<bool>();
-            bool newValue = doc["pump"]["value"].as<bool>();
-            
-            if (currentCommands.pump.isAuto != newIsAuto || currentCommands.pump.value != newValue) {
-                currentCommands.pump.isAuto = newIsAuto;
-                currentCommands.pump.value = newValue;
-                hasChanges = true;
-                Serial.printf("🔄 Pump command updated: isAuto=%s, value=%s\n", 
-                            newIsAuto ? "true" : "false", newValue ? "true" : "false");
-            }
-        }
-        
-        if (!doc["valve"].isNull()) {
-            bool newIsAuto = doc["valve"]["isAuto"].as<bool>();
-            bool newValue = doc["valve"]["value"].as<bool>();
-            
-            if (currentCommands.valve.isAuto != newIsAuto || currentCommands.valve.value != newValue) {
-                currentCommands.valve.isAuto = newIsAuto;
-                currentCommands.valve.value = newValue;
-                hasChanges = true;
-                Serial.printf("🚰 Valve command updated: isAuto=%s, value=%s\n", 
-                            newIsAuto ? "true" : "false", newValue ? "true" : "false");
-            }
-        }
-        
+
         if (hasChanges) {
             Serial.println("[RTDB Stream] Commands updated successfully");
             // Set flag to trigger rule application in main loop
@@ -655,6 +854,20 @@ void startFirebaseStream() {
         return;
     }
 
+    // Mark firebase ready and fetch commands once before starting stream
+    firebaseReady = true;
+
+    // On fresh start or after reconnect, fetch latest /commands to avoid overwriting manual states
+    if (needResyncOnReconnect || !initialCommandsSynced) {
+        Serial.println("[RTDB] Fetching /commands before starting stream...");
+        bool manualApplied = fetchControlCommands();
+        if (manualApplied) {
+            Serial.println("[RTDB] Manual states applied from initial fetch");
+        }
+        initialCommandsSynced = true; // consider synced after successful GET (even if no manual)
+        needResyncOnReconnect = false;
+    }
+
     // Get RealtimeDatabase instance and set base URL once app is available
     app.getApp<RealtimeDatabase>(Database);
     Database.url("https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app");
@@ -677,6 +890,9 @@ void handleFirebaseStream() {
             Serial.println("[RTDB Stream] WiFi disconnected, marking stream as disconnected");
             streamConnected = false;
         }
+        // WiFi lost; require resync on reconnect and block RTDB writes
+        initialCommandsSynced = false;
+        needResyncOnReconnect = true;
         return;
     }
     
@@ -705,4 +921,13 @@ void handleFirebaseStream() {
 // Check if the Firebase stream is currently connected
 bool isStreamConnected() {
     return streamConnected;
+}
+
+// Expose readiness flags
+bool isFirebaseReady() {
+    return firebaseReady;
+}
+
+bool isInitialCommandsSynced() {
+    return initialCommandsSynced;
 }

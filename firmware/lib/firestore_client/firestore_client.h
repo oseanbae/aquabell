@@ -4,6 +4,7 @@
 #include <time.h>
 #include <FirebaseClient.h>
 #include <WiFiClientSecure.h>
+#include <ArduinoJson.h> 
 
 // Command structure for RTDB
 struct CommandState {
@@ -30,15 +31,12 @@ void startFirebaseStream();
 void handleFirebaseStream();
 void onRTDBStream(AsyncResult &result);
 bool isStreamConnected();
+bool isFirebaseReady();
+bool isInitialCommandsSynced();
+
+// Helper function for processing patch events
+void processPatchEvent(const String& dataPath, JsonDocument& patchData, Commands& currentCommands, bool& hasChanges);
 
 // Non-blocking retry management
 bool processRetry();
 bool isRetryInProgress();
-
-// Firestore functions - SENSOR DATA ONLY
-// void pushSensorLogs(const RealTimeData& data, time_t timestamp);  // 5-min averaged sensor logs
-// void pushActuatorLogsToFirestore(const ActuatorState& actuators, time_t timestamp);  // Optional historical logging
-
-// RTDB functions - COMMANDS ONLY
-// Note: We now only use 'commands' in RTDB, no separate 'actuator_states'
-// The syncRelayState function handles syncing AUTO actuator values to RTDB
