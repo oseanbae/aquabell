@@ -168,38 +168,41 @@ void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned l
 
 void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis) {
     static unsigned long lastToggle = 0;
-    static bool initialized = false;
+    static bool firstRun = true;
+    static bool prevPump = false;
 
-    // First initialization (boot-safe)
-    if (!initialized) {
-        // Start ON by default and align lastToggle so the ON_DURATION is tracked immediately.
-        actuators.pump = true; 
-        lastToggle = nowMillis; // The ON cycle starts NOW.
-        initialized = true;
-        Serial.println("[RULE_ENGINE] 💧 Pump initialized to ON.");
+    if (firstRun) {
+        lastToggle = nowMillis - (PUMP_OFF_DURATION * 60 * 1000UL); // trigger ON immediately
+        firstRun = false;
     }
 
     // Safety: turn OFF if float switch is low
     if (waterLevelLow) {
         if (actuators.pump) {
             actuators.pump = false;
-            lastToggle = nowMillis; // reset timer
+            lastToggle = nowMillis;
             Serial.println("[RULE_ENGINE] 💧 Pump OFF — float switch LOW");
         }
         return;
     }
 
-    const unsigned long ON_DURATION = PUMP_ON_DURATION * 60 * 1000UL;   // 15 minutes
-    const unsigned long OFF_DURATION = PUMP_OFF_DURATION * 60 * 1000UL; // 45 minutes
+    const unsigned long ON_DURATION = PUMP_ON_DURATION * 60 * 1000UL;
+    const unsigned long OFF_DURATION = PUMP_OFF_DURATION * 60 * 1000UL;
 
     if (actuators.pump && (nowMillis - lastToggle >= ON_DURATION)) {
         actuators.pump = false;
         lastToggle = nowMillis;
         Serial.println("[RULE_ENGINE] 💧 Pump OFF — schedule");
-    } else if (!actuators.pump && (nowMillis - lastToggle >= OFF_DURATION)) {
+    } 
+    else if (!actuators.pump && (nowMillis - lastToggle >= OFF_DURATION)) {
         actuators.pump = true;
         lastToggle = nowMillis;
         Serial.println("[RULE_ENGINE] 💧 Pump ON — schedule");
+    }
+
+    if (actuators.pump != prevPump) {
+        control_pump(actuators.pump);
+        prevPump = actuators.pump;
     }
 }
 
@@ -237,7 +240,6 @@ void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, u
         prevFan = actuators.fan;
     }
 }
-
 
 void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis) {
     static bool prevLight = false;

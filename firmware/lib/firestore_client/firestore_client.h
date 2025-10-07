@@ -23,6 +23,7 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp);
 void firebaseSignIn();
 bool fetchControlCommands();
 void syncRelayState(const RealTimeData &data, const Commands& commands);
+void refreshIdToken();
 
 // New FirebaseClient stream-based functions
 void startFirebaseStream();

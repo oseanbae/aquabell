@@ -29,6 +29,9 @@ RealtimeDatabase Database;
 bool streamConnected = false;
 unsigned long lastStreamReconnectAttempt = 0;
 const unsigned long STREAM_RECONNECT_INTERVAL = 30000; // 30 seconds
+static bool firebaseAppInitialized = false;
+static bool databaseConfigured = false;
+static DefaultNetwork defaultNet; // provides network_config_data for built-in WiFi
 
 // Non-blocking retry state for RTDB PATCH requests
 struct RetryState {
@@ -175,7 +178,8 @@ bool processRetry() {
     https.setTimeout(10000); // 10 second timeout
     https.begin(client, retryState.url);
     https.addHeader("Content-Type", "application/json");
-
+    https.addHeader("Authorization", "Bearer " + idToken);
+    
     int httpResponseCode = https.sendRequest("PATCH", retryState.payload);
     Serial.printf("[Retry] HTTP response: %d\n", httpResponseCode);
 
@@ -264,7 +268,6 @@ void pushToFirestoreLive(const RealTimeData &data) {
     // Always end the connection to free memory
     https.end();
 }
-
 
 void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
     // Check and refresh token before Firestore call
@@ -433,7 +436,6 @@ bool fetchControlCommands() {
     return false;
 }
 
-
 void syncRelayState(const RealTimeData &data, const Commands& commands) {
     // If a retry is already in progress, don't start a new sync
     if (isRetryInProgress()) {
@@ -525,11 +527,20 @@ void onRTDBStream(AsyncResult &result) {
                       result.uid().c_str(),
                       result.error().message().c_str(),
                       result.error().code());
+        // -106 unauthenticate → force reconnect flow
+        if (result.error().code() == -106) {
+            Serial.println("[RTDB Stream] Auth lost (code -106). Will re-auth and restart stream.");
+        }
         streamConnected = false;
     }
 
     if (result.available()) {
         Serial.println("[RTDB Stream] Data updated");
+        // Mark connected on first data/event
+        if (!streamConnected) {
+            streamConnected = true;
+            Serial.println("[RTDB Stream] ✅ Stream connected");
+        }
         
         // Parse the stream data
         String data = result.c_str();
@@ -538,7 +549,12 @@ void onRTDBStream(AsyncResult &result) {
         // Parse JSON and update currentCommands
         JsonDocument doc;
         DeserializationError err = deserializeJson(doc, data);
-        
+        String data = result.c_str();
+    
+        if (data.isEmpty() || data == "null") {
+            Serial.println("[RTDB Stream] Empty or null event, ignoring...");
+            return;
+        }
         if (err) {
             Serial.printf("[RTDB Stream] JSON parse error: %s\n", err.c_str());
             return;
@@ -617,33 +633,40 @@ void startFirebaseStream() {
         Serial.println("[RTDB Stream] WiFi not connected, cannot start stream");
         return;
     }
-    
-    if (idToken == "") {
-        Serial.println("[RTDB Stream] No auth token, signing in first");
-        firebaseSignIn();
-        if (idToken == "") {
-            Serial.println("[RTDB Stream] Failed to get auth token");
-            return;
-        }
-    }
-    
+
     Serial.println("[RTDB Stream] Starting Firebase RTDB stream...");
-    
-    // Initialize Firebase app with authentication
-    UserAuth user_auth(FIREBASE_API_KEY, USER_EMAIL, USER_PASSWORD, 3000);
-    initializeApp(aClient, app, getAuth(user_auth), onRTDBStream, "authTask");
-    
-    // Get RealtimeDatabase instance
+
+    // One-time app initialization (non-blocking); App handles auth internally
+    if (!firebaseAppInitialized) {
+        // Bind WiFi SSL client and default network to AsyncClient before auth
+        ssl_client.setInsecure();
+        aClient.setNetwork(ssl_client, getNetwork(defaultNet));
+
+        UserAuth user_auth(FIREBASE_API_KEY, USER_EMAIL, USER_PASSWORD, 3000);
+        initializeApp(aClient, app, getAuth(user_auth), onRTDBStream, "authTask");
+        firebaseAppInitialized = true;
+        Serial.println("[RTDB Stream] FirebaseApp initialization requested");
+    }
+
+    // Only start stream when app is ready (authenticated)
+    if (!app.ready()) {
+        Serial.println("[RTDB Stream] App not ready yet (auth in progress). Will try again later.");
+        lastStreamReconnectAttempt = millis();
+        return;
+    }
+
+    // Get RealtimeDatabase instance and set base URL once app is available
     app.getApp<RealtimeDatabase>(Database);
     Database.url("https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app");
-    
-    // Start listening to the commands path
+
+    // Start listening to the commands path via callback-based stream
     String path = "/commands/" DEVICE_ID;
     Database.get(aClient, path, onRTDBStream, "streamTask");
-    
-    Serial.println("[RTDB Stream] Stream started successfully");
-    streamConnected = true;
+
+    Serial.println("[RTDB Stream] Stream start requested");
+    streamConnected = false; // will flip true on first available/event
     lastStreamReconnectAttempt = millis();
+    databaseConfigured = true;
 }
 
 // Handle Firebase stream - must be called in loop()
@@ -657,19 +680,26 @@ void handleFirebaseStream() {
         return;
     }
     
+    // Ensure auth/initialization progresses
+    app.loop();
+
     if (!streamConnected) {
-        // Try to reconnect if enough time has passed
         unsigned long now = millis();
         if (now - lastStreamReconnectAttempt >= STREAM_RECONNECT_INTERVAL) {
-            Serial.println("[RTDB Stream] Attempting to reconnect stream...");
+            Serial.println("[RTDB Stream] Attempting to (re)start stream...");
             startFirebaseStream();
+        }
+        // Drive DB state only after it's configured
+        if (databaseConfigured) {
+            Database.loop();
         }
         return;
     }
-    
-    // Process Firebase app and database loops
-    app.loop();
-    Database.loop();
+
+    // Process database loop when connected
+    if (databaseConfigured) {
+        Database.loop();
+    }
 }
 
 // Check if the Firebase stream is currently connected

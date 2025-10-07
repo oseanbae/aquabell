@@ -16,13 +16,14 @@
 
 
 // === CONSTANTS ===
-#define USE_DHT_MOCK false
+#define USE_DHT_MOCK true
 #define USE_PH_MOCK true
 #define USE_DO_MOCK true
-#define USE_TURBIDITY_MOCK false
-#define USE_WATERTEMP_MOCK false
-#define USE_FLOATSWITCH_MOCK false
+#define USE_TURBIDITY_MOCK true
+#define USE_WATERTEMP_MOCK true
+#define USE_FLOATSWITCH_MOCK true
 
+// unsigned long tokenExpiryTime = 0;
 
 RealTimeData current = {}; // Initialize all fields to 0/false
 ActuatorState actuators = {}; // Initialize all actuator states to false/auto
@@ -131,11 +132,10 @@ void loop() {
 
     // Apply rules when sensors are updated, commands change via stream, or float switch changes
     if (sensorsUpdated || commandsChangedViaStream || is_float_switch_triggered()) {
-        // Update LCD with latest sensor data
-        lcd_display(current);
+        lcd_display(current); // Update LCD with latest sensor data
         
-        // 1️⃣ Apply AUTO mode logic: ESP32 overwrites values for AUTO actuators
-        // 2️⃣ Apply MANUAL mode logic: Use values from RTDB for MANUAL actuators
+        // Apply AUTO mode logic: ESP32 overwrites values for AUTO actuators
+        // Apply MANUAL mode logic: Use values from RTDB for MANUAL actuators
         applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
 
         // Update relay states in RealTimeData for compatibility
@@ -204,9 +204,8 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     static unsigned long lastSensorRead = 0;
     static bool lastFloatState = false;
 
-    // Check if it's time to read all sensors
     if (now - lastSensorRead < UNIFIED_SENSOR_INTERVAL) {
-        return false; // Not time to read yet
+        return false; 
     }
 
     Serial.println("📊 Reading all sensors...");
