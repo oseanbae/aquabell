@@ -14,7 +14,6 @@
 #include "firestore_client.h"
 #include "time_utils.h"
 
-
 // === CONSTANTS ===
 #define USE_DHT_MOCK true
 #define USE_PH_MOCK true
@@ -23,9 +22,8 @@
 #define USE_WATERTEMP_MOCK true
 #define USE_FLOATSWITCH_MOCK true
 
-
-RealTimeData current = {}; // Initialize all fields to 0/false
-ActuatorState actuators = {}; // Initialize all actuator states to false/auto
+RealTimeData current = {};     // Initialize all fields to 0/false
+ActuatorState actuators = {};  // Initialize all actuator states to false/auto
 Commands currentCommands = { 
     {true, false}, // fan
     {true, false}, // light
@@ -33,17 +31,21 @@ Commands currentCommands = {
     {true, false}  // valve
 }; 
 
-// Flag to trigger rule application when commands change via stream
+// === FLAGS & TIMERS ===
 volatile bool commandsChangedViaStream = false;
 unsigned long lastStreamUpdate = 0;
-
+static unsigned long lastRelaySync = 0;
+const unsigned long RELAY_SYNC_COOLDOWN = 5000;// 5 seconds cooldown between relay state syncs
 
 // === FORWARD DECLARATIONS ===
 void initAllModules();
 bool readSensors(unsigned long now, RealTimeData &data);
+void evaluateRules(bool forceImmediate); // forward for external callers
+
 void displaySensorReading(const char* label, float value, const char* unit) {
     Serial.printf("[SENSOR] %s = %.2f %s\n", label, value, unit);
 }
+
 void connectWiFi() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print("Connecting to WiFi...");
@@ -99,15 +101,15 @@ void setup() {
     } else {
         Serial.println(" failed. Continuing without WiFi.");
     }
+
     Serial.println("✅ System initialization complete.");
 }
-
 
 // === LOOP ===
 void loop() {
     unsigned long nowMillis = millis();
 
-    // Handle WiFi reconnect logic (no change)
+    // Handle WiFi reconnect logic
     if (WiFi.status() != WL_CONNECTED) {
         static unsigned long lastWiFiAttempt = 0;
         if (nowMillis - lastWiFiAttempt >= 30000) {
@@ -161,14 +163,15 @@ void loop() {
 
         // ✅ Only sync after Firebase and commands are ready
         if (wifiUp && fbReady && cmdsSynced) {  
-        // 🧠 Prevent immediate echo after RTDB stream change
-        if (millis() - lastStreamUpdate > 2000) {
-            syncRelayState(current, currentCommands);
-            pushToFirestoreLive(current);
-        } else {
-            Serial.println("[MAIN] Skipping sync — too soon after stream update");
+            // 🧠 Debounce RTDB echo + prevent spam syncs
+            if ((millis() - lastStreamUpdate > 5000) && (millis() - lastRelaySync > RELAY_SYNC_COOLDOWN)) {
+                syncRelayState(current, currentCommands);
+                pushToRTDBLive(current);
+                lastRelaySync = millis();
+            } else {
+                Serial.println("[MAIN] Skipping sync — debounce/cooldown active");
+            }
         }
-}
 
 POST_RULES:
         commandsChangedViaStream = false;
@@ -176,7 +179,7 @@ POST_RULES:
 
     if (isRetryInProgress()) processRetry();
 
-    // --- Batch logging block (no change) ---
+    // --- Batch logging block ---
     static unsigned long lastBatchLog = 0;
     const unsigned long batchInterval = 600000;
     const int batchSize = 60;
@@ -197,8 +200,59 @@ POST_RULES:
 
     yield();
 }
+// === IMMEDIATE RULE EVALUATION (invoked by RTDB stream when AUTO toggles) ===
+void evaluateRules(bool forceImmediate) {
+    unsigned long nowMillis = millis();
 
+    // Optional: display current snapshot
+    lcd_display(current);
 
+    bool wifiUp = (WiFi.status() == WL_CONNECTED);
+    bool fbReady = isFirebaseReady();
+    bool cmdsSynced = isInitialCommandsSynced();
+
+    // Gate: do not actuate until Firebase is ready/synced when online
+    if (wifiUp && (!fbReady || !cmdsSynced)) {
+        Serial.println("[EVAL] Firebase not ready — holding actuators OFF");
+        actuators.fan = false;
+        actuators.light = false;
+        actuators.pump = false;
+        actuators.valve = false;
+        // Reflect states
+        current.relayStates.fan       = actuators.fan;
+        current.relayStates.light     = actuators.light;
+        current.relayStates.waterPump = actuators.pump;
+        current.relayStates.valve     = actuators.valve;
+        return;
+    }
+
+    // Apply rules in either online or offline mode
+    if (wifiUp) {
+        applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
+    } else {
+        Commands defaultAuto = { {true,false}, {true,false}, {true,false}, {true,false} };
+        applyRulesWithModeControl(current, actuators, defaultAuto, nowMillis);
+    }
+
+    // Reflect current relay states
+    current.relayStates.fan       = actuators.fan;
+    current.relayStates.light     = actuators.light;
+    current.relayStates.waterPump = actuators.pump;
+    current.relayStates.valve     = actuators.valve;
+
+    // Conditional sync to RTDB/Firestore
+    if (wifiUp && fbReady && cmdsSynced) {
+        bool debounceOk = (millis() - lastStreamUpdate > 5000) && (millis() - lastRelaySync > RELAY_SYNC_COOLDOWN);
+        if (forceImmediate || debounceOk) {
+            syncRelayState(current, currentCommands);
+            pushToRTDBLive(current);
+            lastRelaySync = millis();
+        } else {
+            Serial.println("[EVAL] Skipping sync — debounce/cooldown active");
+        }
+    }
+}
+ 
 // === INIT HELPERS ===
 void initAllModules() {
     temp_sensor_init();
@@ -223,59 +277,55 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     Serial.println("📊 Reading all sensors...");
     bool updated = false;
 
-    // --- Water Temp ---
-    float temp = USE_WATERTEMP_MOCK ? 25.0 : read_waterTemp();
+    // --- Water Temp (°C) ---
+    float temp = USE_WATERTEMP_MOCK ? random(200, 320) / 10.0 : read_waterTemp();
     
     if (!isnan(temp) && temp > -50.0f && temp < 100.0f) {
         data.waterTemp = temp;
-        // displaySensorReading("🌡️ Water Temp", data.waterTemp, "°C");
         updated = true;
     } else {
         Serial.println("⚠️ Invalid water temperature");
     }
 
     // --- pH ---
-    float ph = USE_PH_MOCK ? 7.0 : read_ph(data.waterTemp);
+    float ph = USE_PH_MOCK ? random(600, 800) / 100.0 : read_ph(data.waterTemp);
     
     if (!isnan(ph) && ph > -2.0f && ph < 16.0f) {
         data.pH = ph;
-        // displaySensorReading("🧪 pH", data.pH, "");
         updated = true;
     } else {
         static unsigned long lastPHError = 0;
-        if (now - lastPHError >= 60000) { // Log error only once per minute
+        if (now - lastPHError >= 60000) {
             Serial.println("⚠️ Invalid pH");
             lastPHError = now;
         }
     }
 
-    // --- Dissolved Oxygen ---
-    float doValue = USE_DO_MOCK ? 6.5 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
+    // --- Dissolved Oxygen (mg/L) ---
+    float doValue = USE_DO_MOCK ? random(500, 850) / 100.0 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
     
     if (!isnan(doValue) && doValue >= -5.0f && doValue < 25.0f) {
         data.dissolvedOxygen = doValue;
-        // displaySensorReading("🫧 DO", data.dissolvedOxygen, "mg/L");
         updated = true;
     } else {
         Serial.println("⚠️ Invalid DO");
     }
 
-    // --- Turbidity ---
-    float turbidity = USE_TURBIDITY_MOCK ? 20.0 : read_turbidity();
+    // --- Turbidity (NTU) ---
+    float turbidity = USE_TURBIDITY_MOCK ? random(10, 100) * 1.0 : read_turbidity();
     
     if (!isnan(turbidity) && turbidity >= -100.0f && turbidity < 3000.0f) {
         data.turbidityNTU = turbidity;
-        // displaySensorReading("🌊 Turbidity", data.turbidityNTU, "NTU");
         updated = true;
     } else {
         Serial.println("⚠️ Invalid turbidity");
     }
 
-    // --- DHT (Air Temp & Humidity) ---
+    // --- DHT (Air Temp °C & Humidity %) ---
     float airTemp, airHumidity;
     if (USE_DHT_MOCK) {
-        airTemp = 27.0;
-        airHumidity = 65.0;
+        airTemp = random(250, 350) / 10.0;     // 25.0–35.0°C
+        airHumidity = random(400, 800) / 10.0; // 40–80%
     } else {
         airTemp = read_dhtTemp();
         airHumidity = read_dhtHumidity();
@@ -286,15 +336,15 @@ bool readSensors(unsigned long now, RealTimeData &data) {
         airHumidity >= 0.0f && airHumidity <= 100.0f) {
         data.airTemp = airTemp;
         data.airHumidity = airHumidity;
-        // displaySensorReading("🌡️ Air Temp", data.airTemp, "°C");
-        // displaySensorReading("💨 Air Humidity", data.airHumidity, "%");
         updated = true;
     } else {
         Serial.println("⚠️ Invalid DHT");
     }
 
     // --- Float Switch ---
-    bool floatState = USE_FLOATSWITCH_MOCK ? false : float_switch_active();
+    bool floatState = USE_FLOATSWITCH_MOCK 
+        ? (random(0, 100) < 10) // 10% chance to trigger
+        : float_switch_active();
 
     if (floatState != lastFloatState) {
         data.floatTriggered = floatState;
@@ -303,12 +353,11 @@ bool readSensors(unsigned long now, RealTimeData &data) {
         updated = true;
     }
 
-    // Update last read time
     lastSensorRead = now;
-    
+
     if (updated) {
         Serial.println("✅ All sensors read successfully");
     }
-    
+
     return updated;
 }

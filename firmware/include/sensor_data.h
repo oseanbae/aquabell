@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 // Centralized actuator state management
+
 struct ActuatorState {
     // Current physical states
     bool fan = false;
@@ -33,6 +34,11 @@ struct ActuatorState {
     bool lightManualValue = false;
     bool pumpManualValue = false;
     bool valveManualValue = false;
+
+    bool fanAutoJustEnabled = false;
+    bool lightAutoJustEnabled = false;
+    bool pumpAutoJustEnabled = false;
+    bool valveAutoJustEnabled = false;
 };
 
 struct RealTimeData {

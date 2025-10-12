@@ -19,7 +19,7 @@ struct Commands {
     CommandState valve;
 };
 
-void pushToFirestoreLive(const RealTimeData &data);
+void pushToRTDBLive(const RealTimeData &data);
 void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp);
 void firebaseSignIn();
 bool fetchControlCommands();

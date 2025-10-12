@@ -88,12 +88,13 @@
 
 //=== WIFI Configuration ===
 //JP'S HOME WIFI
-#define WIFI_SSID   "meow"
-#define WIFI_PASS   "helloworld2025"
+// #define WIFI_SSID   "meow"
+// #define WIFI_PASS   "helloworld2025"
 
 //Capstone wifi
 // #define WIFI_SSID           "Capstone"
-// #define WIFI_PASS           "capstone"
+#define WIFI_PASS           "capstone"
+#define WIFI_SSID           "Capstone-2.4G-ext"
 
 //IPEN WIFI
 // #define WIFI_SSID           "Ipen"
@@ -102,6 +103,7 @@
 //JP's PHONE HOTSPOT
 // #define WIFI_SSID           "jp"
 // #define WIFI_PASS           "11223344"
+
 
 //GOMO WIFI
 // #define WIFI_SSID           "OREOCHROMIS"
