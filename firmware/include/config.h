@@ -86,6 +86,8 @@
 // Maximum time to keep refill valve open before safety lock
 #define VALVE_MAX_OPEN_MS       (30UL * 60UL * 1000UL)  // 30 minutes
 
+#define RELAY_SYNC_COOLDOWN 3000UL
+
 //=== WIFI Configuration ===
 //JP'S HOME WIFI
 // #define WIFI_SSID   "meow"

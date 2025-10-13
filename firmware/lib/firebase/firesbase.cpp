@@ -8,7 +8,8 @@
 #include "sensor_data.h"
 #include "relay_control.h"
 #include "time_utils.h"
-#include "firestore_client.h"
+#include "firebase.h"
+#include "rule_engine.h"
 #include <time.h>
 
 #define FIREBASE_PROJECT_ID "aquabell-cap2025"
@@ -724,27 +725,29 @@ void onRTDBStream(AsyncResult &result) {
         auto handleActuator = [&](const char* name) {
             if (changedPath.startsWith(String("/") + name)) {
                 bool oldAuto = false;
+                bool newAuto = false;
+
                 if (strcmp(name, "fan") == 0) oldAuto = currentCommands.fan.isAuto;
                 else if (strcmp(name, "light") == 0) oldAuto = currentCommands.light.isAuto;
                 else if (strcmp(name, "pump") == 0) oldAuto = currentCommands.pump.isAuto;
                 else if (strcmp(name, "valve") == 0) oldAuto = currentCommands.valve.isAuto;
 
-                // Process the patch
-                JsonDocument obj; obj.set(changedData);
+                // Apply patch changes
+                JsonDocument obj; 
+                obj.set(changedData);
                 processPatchEvent(String("/") + name, obj, currentCommands, hasChanges);
 
-                // Check if it just switched to AUTO
-                // bool newAuto = obj["isAuto"].isNull() ? oldAuto : obj["isAuto"].as<bool>();
-                // if (!oldAuto && newAuto) {
-                //     if (strcmp(name, "fan") == 0) ActuatorState.fanAutoJustEnabled = true;
-                //     else if (strcmp(name, "light") == 0) ActuatorState.lightAutoJustEnabled = true;
-                //     else if (strcmp(name, "pump") == 0) currentCommands.pumpAutoJustEnabled = true;
-                //     else if (strcmp(name, "valve") == 0) currentCommands.valveAutoJustEnabled = true;
-                //     autoTriggered = true;
-                // }
-                
+                // Detect if toggled back to AUTO mode
+                if (!obj["isAuto"].isNull()) {
+                    newAuto = obj["isAuto"].as<bool>();
+                    if (!oldAuto && newAuto) {
+                        Serial.printf("[RTDB Stream] %s switched to AUTO — triggering rule evaluation\n", name);
+                        autoTriggered = true;
+                    }
+                }
             }
         };
+
 
         handleActuator("fan");
         handleActuator("light");
@@ -783,13 +786,13 @@ void onRTDBStream(AsyncResult &result) {
         lastStreamUpdate = millis();
     }
 
-    // 🔹 Trigger rule engine immediately when switching back to AUTO
+    //Trigger rule engine immediately when switching back to AUTO
     if (autoTriggered && initialCommandsSynced) {
         Serial.println("[RTDB Stream] AUTO mode re-enabled — evaluating rule engine now...");
         evaluateRules(true);
     }
-}
 
+}
 
 // Initialize and start the Firebase RTDB stream
 void startFirebaseStream() {
@@ -882,7 +885,6 @@ void handleFirebaseStream() {
         Database.loop();
     }
 }
-
 
 // Check if the Firebase stream is currently connected
 bool isStreamConnected() {

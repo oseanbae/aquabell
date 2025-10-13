@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <time.h>
 #include "sensor_data.h"
-#include "firestore_client.h"
+#include "firebase.h"
 
 // Initialize relays (implementation expected elsewhere)
 void relay_control_init();
@@ -22,3 +22,5 @@ void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis);
 // Legacy functions (kept for compatibility)
 void updateActuators(RealTimeData& current, Commands& commands, unsigned long nowMillis);
 void apply_rules(RealTimeData& current, const struct tm& now, const Commands& commands);
+
+void evaluateRules(bool forceImmediate = false);

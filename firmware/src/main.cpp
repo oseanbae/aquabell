@@ -11,7 +11,7 @@
 #include "sensor_data.h"
 #include "rule_engine.h"
 #include "lcd_display.h"
-#include "firestore_client.h"
+#include "firebase.h"
 #include "time_utils.h"
 
 // === CONSTANTS ===
@@ -22,38 +22,47 @@
 #define USE_WATERTEMP_MOCK true
 #define USE_FLOATSWITCH_MOCK true
 
-RealTimeData current = {};     // Initialize all fields to 0/false
-ActuatorState actuators = {};  // Initialize all actuator states to false/auto
-Commands currentCommands = { 
+// === GLOBAL STATES ===
+RealTimeData current = {};
+ActuatorState actuators = {};
+
+Commands currentCommands = {
     {true, false}, // fan
     {true, false}, // light
     {true, false}, // pump
     {true, false}  // valve
-}; 
+};
 
 // === FLAGS & TIMERS ===
 volatile bool commandsChangedViaStream = false;
 unsigned long lastStreamUpdate = 0;
-static unsigned long lastRelaySync = 0;
-const unsigned long RELAY_SYNC_COOLDOWN = 5000;// 5 seconds cooldown between relay state syncs
+unsigned long lastRelaySync = 0;
 
 // === FORWARD DECLARATIONS ===
 void initAllModules();
 bool readSensors(unsigned long now, RealTimeData &data);
-void evaluateRules(bool forceImmediate); // forward for external callers
+void connectWiFi();
 
+// === UTILS ===
 void displaySensorReading(const char* label, float value, const char* unit) {
     Serial.printf("[SENSOR] %s = %.2f %s\n", label, value, unit);
 }
 
 void connectWiFi() {
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print("Connecting to WiFi...");
-    while (WiFi.status() != WL_CONNECTED) {
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
         delay(500);
+        yield();
         Serial.print(".");
+        attempts++;
     }
-    Serial.println(" connected.");
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println(" connected.");
+    } else {
+        Serial.println(" failed. Continuing without WiFi.");
+    }
 }
 
 // === SETUP ===
@@ -62,54 +71,35 @@ void setup() {
     delay(1000);
 
     Serial.println("🚀 AquaBell System Starting...");
-
     analogReadResolution(12);
     analogSetAttenuation(ADC_11db);
 
     initAllModules();
+    connectWiFi();
 
-    // === WiFi Connection ===
-    Serial.print("Connecting to WiFi...");
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-    int wifiAttempts = 0;
-    while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20) {
-        delay(500);
-        yield(); // prevent watchdog reset
-        Serial.print(".");
-        wifiAttempts++;
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {    
-        Serial.println(" connected.");
-
+    if (WiFi.status() == WL_CONNECTED) {
         firebaseSignIn();
 
-        // Start Firebase RTDB stream for real-time commands
         Serial.println("🔥 Starting Firebase RTDB stream...");
         startFirebaseStream();
 
-        // Time sync now that WiFi is connected
         Serial.println("🕐 Initializing NTP time sync...");
-        bool timeSyncSuccess = syncTimeOncePerBoot(10000); // shorter timeout
-
+        bool timeSyncSuccess = syncTimeOncePerBoot(10000);
         if (timeSyncSuccess) {
             Serial.println("✅ Time sync successful - schedule-based actions enabled");
         } else {
             Serial.println("⚠️ Time sync failed - schedule-based actions suspended until time available");
         }
-    } else {
-        Serial.println(" failed. Continuing without WiFi.");
     }
 
     Serial.println("✅ System initialization complete.");
 }
 
-// === LOOP ===
+// === MAIN LOOP ===
 void loop() {
     unsigned long nowMillis = millis();
 
-    // Handle WiFi reconnect logic
+    // === Handle WiFi reconnect ===
     if (WiFi.status() != WL_CONNECTED) {
         static unsigned long lastWiFiAttempt = 0;
         if (nowMillis - lastWiFiAttempt >= 30000) {
@@ -121,11 +111,12 @@ void loop() {
 
     periodicTimeSync();
 
-    // Handle Firebase stream updates if WiFi available
+    // === Handle Firebase Stream ===
     if (WiFi.status() == WL_CONNECTED) {
         handleFirebaseStream();
     }
 
+    // === Read Sensors ===
     bool sensorsUpdated = readSensors(nowMillis, current);
 
     if (sensorsUpdated || commandsChangedViaStream || is_float_switch_triggered()) {
@@ -135,7 +126,7 @@ void loop() {
         bool fbReady = isFirebaseReady();
         bool cmdsSynced = isInitialCommandsSynced();
 
-        // 🧱 Gate logic — skip automation until Firebase fully synced
+        // === Gate logic: wait until Firebase ready ===
         if (wifiUp && (!fbReady || !cmdsSynced)) {
             Serial.println("[MAIN] Firebase not ready — holding actuators OFF");
             actuators.fan = false;
@@ -143,52 +134,55 @@ void loop() {
             actuators.pump = false;
             actuators.valve = false;
             commandsChangedViaStream = false;
-            goto POST_RULES;
-        }
-
-        // ✅ Safe zone: Firebase ready and /commands synced
-        if (wifiUp) {
-            applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
         } else {
-            // Offline fallback (AUTO-all)
-            Commands defaultAuto = { {true,false}, {true,false}, {true,false}, {true,false} };
-            applyRulesWithModeControl(current, actuators, defaultAuto, nowMillis);
-        }
-
-        // Reflect current relay states
-        current.relayStates.fan       = actuators.fan;
-        current.relayStates.light     = actuators.light;
-        current.relayStates.waterPump = actuators.pump;
-        current.relayStates.valve     = actuators.valve;
-
-        // ✅ Only sync after Firebase and commands are ready
-        if (wifiUp && fbReady && cmdsSynced) {  
-            // 🧠 Debounce RTDB echo + prevent spam syncs
-            if ((millis() - lastStreamUpdate > 5000) && (millis() - lastRelaySync > RELAY_SYNC_COOLDOWN)) {
-                syncRelayState(current, currentCommands);
-                pushToRTDBLive(current);
-                lastRelaySync = millis();
+            // === Automation & Manual Control ===
+            if (wifiUp) {
+                applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
             } else {
-                Serial.println("[MAIN] Skipping sync — debounce/cooldown active");
+                Commands defaultAuto = { {true,false}, {true,false}, {true,false}, {true,false} };
+                applyRulesWithModeControl(current, actuators, defaultAuto, nowMillis);
             }
-        }
 
-POST_RULES:
-        commandsChangedViaStream = false;
+            // === Reflect relay states ===
+            current.relayStates.fan       = actuators.fan;
+            current.relayStates.light     = actuators.light;
+            current.relayStates.waterPump = actuators.pump;
+            current.relayStates.valve     = actuators.valve;
+
+            // === Sync to Firebase if ready ===
+            if (wifiUp && fbReady && cmdsSynced) {
+                bool debounceExpired = (millis() - lastStreamUpdate > 5000);
+                bool cooldownExpired = (millis() - lastRelaySync > RELAY_SYNC_COOLDOWN);
+
+                if (debounceExpired && cooldownExpired) {
+                    syncRelayState(current, currentCommands);
+                    pushToRTDBLive(current);
+                    lastRelaySync = millis();
+                } else {
+                    Serial.println("[MAIN] Skipping sync — debounce/cooldown active");
+                }
+            }
+
+            commandsChangedViaStream = false;
+        }
     }
 
+    // === Retry Handling ===
     if (isRetryInProgress()) processRetry();
 
-    // --- Batch logging block ---
+    // === Batch Firestore Logging ===
     static unsigned long lastBatchLog = 0;
-    const unsigned long batchInterval = 600000;
-    const int batchSize = 60;
-    static RealTimeData logBuffer[batchSize];
+    static RealTimeData logBuffer[60];
     static int logIndex = 0;
+    const unsigned long batchInterval = 600000;
 
     if (WiFi.status() == WL_CONNECTED) {
-        if (sensorsUpdated && logIndex < batchSize) logBuffer[logIndex++] = current;
-        if ((nowMillis - lastBatchLog >= batchInterval) || (logIndex >= batchSize)) {
+        if (sensorsUpdated && logIndex < 60) logBuffer[logIndex++] = current;
+
+        bool intervalElapsed = (nowMillis - lastBatchLog >= batchInterval);
+        bool bufferFull = (logIndex >= 60);
+
+        if (intervalElapsed || bufferFull) {
             time_t timestamp = getUnixTime();
             if (timestamp > 0 && logIndex > 0) {
                 pushBatchLogToFirestore(logBuffer, logIndex, timestamp);
@@ -200,59 +194,7 @@ POST_RULES:
 
     yield();
 }
-// === IMMEDIATE RULE EVALUATION (invoked by RTDB stream when AUTO toggles) ===
-void evaluateRules(bool forceImmediate) {
-    unsigned long nowMillis = millis();
 
-    // Optional: display current snapshot
-    lcd_display(current);
-
-    bool wifiUp = (WiFi.status() == WL_CONNECTED);
-    bool fbReady = isFirebaseReady();
-    bool cmdsSynced = isInitialCommandsSynced();
-
-    // Gate: do not actuate until Firebase is ready/synced when online
-    if (wifiUp && (!fbReady || !cmdsSynced)) {
-        Serial.println("[EVAL] Firebase not ready — holding actuators OFF");
-        actuators.fan = false;
-        actuators.light = false;
-        actuators.pump = false;
-        actuators.valve = false;
-        // Reflect states
-        current.relayStates.fan       = actuators.fan;
-        current.relayStates.light     = actuators.light;
-        current.relayStates.waterPump = actuators.pump;
-        current.relayStates.valve     = actuators.valve;
-        return;
-    }
-
-    // Apply rules in either online or offline mode
-    if (wifiUp) {
-        applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
-    } else {
-        Commands defaultAuto = { {true,false}, {true,false}, {true,false}, {true,false} };
-        applyRulesWithModeControl(current, actuators, defaultAuto, nowMillis);
-    }
-
-    // Reflect current relay states
-    current.relayStates.fan       = actuators.fan;
-    current.relayStates.light     = actuators.light;
-    current.relayStates.waterPump = actuators.pump;
-    current.relayStates.valve     = actuators.valve;
-
-    // Conditional sync to RTDB/Firestore
-    if (wifiUp && fbReady && cmdsSynced) {
-        bool debounceOk = (millis() - lastStreamUpdate > 5000) && (millis() - lastRelaySync > RELAY_SYNC_COOLDOWN);
-        if (forceImmediate || debounceOk) {
-            syncRelayState(current, currentCommands);
-            pushToRTDBLive(current);
-            lastRelaySync = millis();
-        } else {
-            Serial.println("[EVAL] Skipping sync — debounce/cooldown active");
-        }
-    }
-}
- 
 // === INIT HELPERS ===
 void initAllModules() {
     temp_sensor_init();
