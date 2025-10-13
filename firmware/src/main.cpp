@@ -207,7 +207,7 @@ void initAllModules() {
     lcd_init();
     Serial.println("✅ All modules initialized successfully.");
 }
-// === UNIFIED SENSOR READING (Every 10 seconds) ===
+
 bool readSensors(unsigned long now, RealTimeData &data) {
     static unsigned long lastSensorRead = 0;
     static bool lastFloatState = false;
@@ -220,7 +220,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     bool updated = false;
 
     // --- Water Temp (°C) ---
-    float temp = USE_WATERTEMP_MOCK ? random(200, 320) / 10.0 : read_waterTemp();
+    float temp = USE_WATERTEMP_MOCK ? 28.5 : read_waterTemp();
     
     if (!isnan(temp) && temp > -50.0f && temp < 100.0f) {
         data.waterTemp = temp;
@@ -230,7 +230,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- pH ---
-    float ph = USE_PH_MOCK ? random(600, 800) / 100.0 : read_ph(data.waterTemp);
+    float ph = USE_PH_MOCK ? 7.2 : read_ph(data.waterTemp);
     
     if (!isnan(ph) && ph > -2.0f && ph < 16.0f) {
         data.pH = ph;
@@ -244,7 +244,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- Dissolved Oxygen (mg/L) ---
-    float doValue = USE_DO_MOCK ? random(500, 850) / 100.0 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
+    float doValue = USE_DO_MOCK ? 7.5 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
     
     if (!isnan(doValue) && doValue >= -5.0f && doValue < 25.0f) {
         data.dissolvedOxygen = doValue;
@@ -254,7 +254,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     }
 
     // --- Turbidity (NTU) ---
-    float turbidity = USE_TURBIDITY_MOCK ? random(10, 100) * 1.0 : read_turbidity();
+    float turbidity = USE_TURBIDITY_MOCK ? 50.0 : read_turbidity();
     
     if (!isnan(turbidity) && turbidity >= -100.0f && turbidity < 3000.0f) {
         data.turbidityNTU = turbidity;
@@ -266,8 +266,8 @@ bool readSensors(unsigned long now, RealTimeData &data) {
     // --- DHT (Air Temp °C & Humidity %) ---
     float airTemp, airHumidity;
     if (USE_DHT_MOCK) {
-        airTemp = random(250, 350) / 10.0;     // 25.0–35.0°C
-        airHumidity = random(400, 800) / 10.0; // 40–80%
+        airTemp = 27.0;
+        airHumidity = 60.0;
     } else {
         airTemp = read_dhtTemp();
         airHumidity = read_dhtHumidity();
@@ -285,7 +285,7 @@ bool readSensors(unsigned long now, RealTimeData &data) {
 
     // --- Float Switch ---
     bool floatState = USE_FLOATSWITCH_MOCK 
-        ? (random(0, 100) < 10) // 10% chance to trigger
+        ? false 
         : float_switch_active();
 
     if (floatState != lastFloatState) {

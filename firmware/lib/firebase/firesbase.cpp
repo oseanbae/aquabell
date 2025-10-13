@@ -215,8 +215,6 @@ bool isRetryInProgress() {
 }
 
 // ===== Helpers for RTDB Stream SSE payloads =====
-// Extract JSON from Server-Sent Events style payloads like:
-// "event: patch\ndata: {\"path\":\"/pump\",\"data\":{...}}"
 static bool extractSSEJson(const String &rawPayload, String &outJson) {
     String s = rawPayload;
     s.trim();
@@ -790,8 +788,25 @@ void onRTDBStream(AsyncResult &result) {
     if (autoTriggered && initialCommandsSynced) {
         Serial.println("[RTDB Stream] AUTO mode re-enabled — evaluating rule engine now...");
         evaluateRules(true);
-    }
 
+        // Force sync relay states after rule evaluation
+        extern RealTimeData current;   // make sure current holds the latest relay states
+        extern Commands currentCommands;
+        Serial.println("[RTDB Stream] Forcing immediate sync after AUTO re-enable...");
+        Serial.println("[RTDB Stream] Forcing immediate sync after AUTO re-enable...");
+
+        // Directly reflect current actuator GPIO states (true source of truth)
+        extern ActuatorState actuators;
+
+        RealTimeData snapshot = current;  // start from existing data
+        snapshot.relayStates.fan       = actuators.fan;
+        snapshot.relayStates.light     = actuators.light;
+        snapshot.relayStates.waterPump = actuators.pump;
+        snapshot.relayStates.valve     = actuators.valve;
+        
+        syncRelayState(snapshot, currentCommands);
+        Serial.println("[RTDB Stream] Immediate sync completed.");
+    }
 }
 
 // Initialize and start the Firebase RTDB stream

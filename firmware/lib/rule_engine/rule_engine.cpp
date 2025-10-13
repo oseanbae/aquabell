@@ -226,14 +226,15 @@ void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned l
     static unsigned long valveOpenSince = 0;
     static bool prevValve = false;
 
+    // Reset timers when auto mode re-enabled
     if (actuators.valveAutoJustEnabled) {
-        if (waterLevelLow)
-            floatLowSince = nowMillis - FLOAT_LOW_DEBOUNCE_MS;
-        else
-            floatHighSince = nowMillis - FLOAT_HIGH_DEBOUNCE_MS;
+        floatLowSince = 0;
+        floatHighSince = 0;
+        valveOpenSince = 0;
         actuators.valveAutoJustEnabled = false;
     }
 
+    // Track float changes
     if (waterLevelLow) {
         if (floatLowSince == 0) floatLowSince = nowMillis;
         floatHighSince = 0;
@@ -242,17 +243,20 @@ void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned l
         floatLowSince = 0;
     }
 
-    bool debouncedLow  = waterLevelLow  && (nowMillis - floatLowSince  >= FLOAT_LOW_DEBOUNCE_MS);
-    bool debouncedHigh = !waterLevelLow && (nowMillis - floatHighSince >= FLOAT_HIGH_DEBOUNCE_MS);
+    bool lowStable  = waterLevelLow  && (nowMillis - floatLowSince  >= FLOAT_LOW_DEBOUNCE_MS);
+    bool highStable = !waterLevelLow && (nowMillis - floatHighSince >= FLOAT_HIGH_DEBOUNCE_MS);
 
-    if (debouncedLow && !actuators.valve) {
+    // Trigger valve ON when low level is stable
+    if (lowStable && !actuators.valve) {
         actuators.valve = true;
         valveOpenSince = nowMillis;
         Serial.println("[RULE_ENGINE] 🚰 Valve AUTO OPEN — low water detected");
     }
+
+    // Trigger valve OFF when high level stable or timeout reached
     if (actuators.valve) {
         bool timeout = (nowMillis - valveOpenSince >= VALVE_MAX_OPEN_MS);
-        if (debouncedHigh || timeout) {
+        if (highStable || timeout) {
             actuators.valve = false;
             valveOpenSince = 0;
             floatLowSince = 0;
@@ -260,6 +264,7 @@ void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned l
         }
     }
 
+    // Apply hardware state change
     if (actuators.valve != prevValve) {
         control_valve(actuators.valve);
         prevValve = actuators.valve;
@@ -271,13 +276,17 @@ void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned lo
     static bool firstRun = true;
     static bool prevPump = false;
 
-    if (actuators.pumpAutoJustEnabled) {
-        actuators.pumpAutoJustEnabled = false;
-    }
-
+    
     if (firstRun) {
         lastToggle = nowMillis - (PUMP_OFF_DURATION * 60 * 1000UL);
         firstRun = false;
+    }
+
+    if (actuators.pumpAutoJustEnabled) {
+        actuators.pumpAutoJustEnabled = false;
+        // Reset schedule timer to immediately trigger ON
+        lastToggle = nowMillis - (PUMP_OFF_DURATION * 60 * 1000UL);
+        Serial.println("[RULE_ENGINE] 💧 Pump AUTO re-enabled — forcing immediate schedule check");
     }
 
     if (waterLevelLow) {
@@ -316,36 +325,51 @@ void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, u
     if (isnan(airTemp) || isnan(humidity)) return;
 
     static unsigned long fanOnSince = 0;
+    static unsigned long fanOffSince = 0;
     static bool prevFan = false;
 
-    if (actuators.fanAutoJustEnabled) actuators.fanAutoJustEnabled = false;
+    // Reset tracking if auto mode just got re-enabled
+    if (actuators.fanAutoJustEnabled) {
+        fanOnSince = 0;
+        fanOffSince = 0;
+        actuators.fanAutoJustEnabled = false;
+    }
 
+    // Thresholds
     const bool tempEmergency = airTemp >= TEMP_EMERGENCY;
     const bool tempHigh      = airTemp >= TEMP_ON_THRESHOLD;
     const bool tempLow       = airTemp <  TEMP_OFF_THRESHOLD;
-    const bool humHigh       = humidity >  HUMIDITY_ON_THRESHOLD;
+    const bool humHigh       = humidity >= HUMIDITY_ON_THRESHOLD;
 
+    // Determine desired action
     bool shouldTurnOn  = (!actuators.fan) && (tempEmergency || tempHigh || humHigh);
     bool shouldTurnOff = (actuators.fan && tempLow);
 
+    // Max runtime safety (fan off after continuous run)
     if (actuators.fan && (nowMillis - fanOnSince >= FAN_MAX_CONTINUOUS_MS)) {
         shouldTurnOff = true;
+        Serial.println("[RULE_ENGINE] 🌀 Fan AUTO OFF — exceeded max runtime");
     }
 
-    if (shouldTurnOn) {
+    // Apply decisions with debouncing
+    if (shouldTurnOn && (nowMillis - fanOffSince >= FAN_MIN_COOLDOWN_MS)) {
         actuators.fan = true;
         fanOnSince = nowMillis;
         Serial.printf("[RULE_ENGINE] 🌀 Fan AUTO ON — T=%.1f°C, H=%.1f%%\n", airTemp, humidity);
-    } else if (shouldTurnOff && (nowMillis - fanOnSince >= FAN_MINUTE_RUNTIME)) {
+    }
+    else if (shouldTurnOff && (nowMillis - fanOnSince >= FAN_MINUTE_RUNTIME)) {
         actuators.fan = false;
-        Serial.println("[RULE_ENGINE] ✅ Fan AUTO OFF — Normalized or safety limit");
+        fanOffSince = nowMillis;
+        Serial.println("[RULE_ENGINE] ✅ Fan AUTO OFF — normalized or cooldown active");
     }
 
+    // Apply hardware state only if changed
     if (actuators.fan != prevFan) {
         control_fan(actuators.fan);
         prevFan = actuators.fan;
     }
 }
+
 
 void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis) {
     static bool prevLight = false;
@@ -378,4 +402,3 @@ void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis) {
         prevLight = actuators.light;
     }
 }
-

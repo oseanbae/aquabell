@@ -55,6 +55,7 @@
 
 // === Fan Runtime Control ====
 #define FAN_MINUTE_RUNTIME     (5UL * 60 * 1000)    // 5 min in ms
+#define FAN_MIN_COOLDOWN_MS    (30UL * 1000)    // 30 sec minimum OFF time before re-enable
 #define FAN_MAX_CONTINUOUS_MS  (6UL * 60 * 60 * 1000)   // 1 hour safety limit
 
 // Fan Control Thresholds (with hysteresis)
@@ -90,13 +91,13 @@
 
 //=== WIFI Configuration ===
 //JP'S HOME WIFI
-// #define WIFI_SSID   "meow"
-// #define WIFI_PASS   "helloworld2025"
+#define WIFI_SSID   "meow"
+#define WIFI_PASS   "helloworld2025"
 
 //Capstone wifi
 // #define WIFI_SSID           "Capstone"
-#define WIFI_PASS           "capstone"
-#define WIFI_SSID           "Capstone-2.4G-ext"
+// #define WIFI_PASS           "capstone"
+// #define WIFI_SSID           "Capstone-2.4G-ext"
 
 //IPEN WIFI
 // #define WIFI_SSID           "Ipen"
