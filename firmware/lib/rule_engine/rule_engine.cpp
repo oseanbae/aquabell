@@ -8,6 +8,7 @@
 #include "time_utils.h"
 
 // Forward declarations
+void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, const Commands& commands, unsigned long nowMillis);
 void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
 void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
 void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis);
@@ -179,6 +180,45 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     prevValveAuto = commands.valve.isAuto;
 }
 
+// Legacy function for backward compatibility (simplified)
+void applyRules(RealTimeData& data, ActuatorState& actuators, unsigned long nowMillis) {
+    // Create default commands (all AUTO mode)
+    Commands defaultCommands = {
+        {true, false}, // fan
+        {true, false}, // light
+        {true, false}, // pump
+        {true, false}  // valve
+    };
+    
+    // Use the new mode-aware function
+    applyRulesWithModeControl(data, actuators, defaultCommands, nowMillis);
+}
+
+// ===== LEGACY FUNCTIONS (for backward compatibility) =====
+void updateActuators(RealTimeData& current, Commands& commands, unsigned long nowMillis) {
+    // Create ActuatorState from current data
+    ActuatorState actuators = {};
+    actuators.fan = current.relayStates.fan;
+    actuators.light = current.relayStates.light;
+    actuators.pump = current.relayStates.waterPump;
+    actuators.valve = current.relayStates.valve;
+    
+    // Use the new mode-aware function
+    applyRulesWithModeControl(current, actuators, commands, nowMillis);
+}
+
+void apply_rules(RealTimeData& current, const struct tm& now, const Commands& commands) {
+    // Create ActuatorState from current data
+    ActuatorState actuators = {};
+    actuators.fan = current.relayStates.fan;
+    actuators.light = current.relayStates.light;
+    actuators.pump = current.relayStates.waterPump;
+    actuators.valve = current.relayStates.valve;
+    
+    // Use the new mode-aware function
+    applyRulesWithModeControl(current, actuators, commands, millis());
+}
+
 // ===== FALLBACK CONTROL FUNCTIONS =====
 void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis) {
     static unsigned long floatLowSince  = 0;
@@ -339,41 +379,3 @@ void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis) {
     }
 }
 
-// Legacy function for backward compatibility (simplified)
-void applyRules(RealTimeData& data, ActuatorState& actuators, unsigned long nowMillis) {
-    // Create default commands (all AUTO mode)
-    Commands defaultCommands = {
-        {true, false}, // fan
-        {true, false}, // light
-        {true, false}, // pump
-        {true, false}  // valve
-    };
-    
-    // Use the new mode-aware function
-    applyRulesWithModeControl(data, actuators, defaultCommands, nowMillis);
-}
-
-// ===== LEGACY FUNCTIONS (for backward compatibility) =====
-void updateActuators(RealTimeData& current, Commands& commands, unsigned long nowMillis) {
-    // Create ActuatorState from current data
-    ActuatorState actuators = {};
-    actuators.fan = current.relayStates.fan;
-    actuators.light = current.relayStates.light;
-    actuators.pump = current.relayStates.waterPump;
-    actuators.valve = current.relayStates.valve;
-    
-    // Use the new mode-aware function
-    applyRulesWithModeControl(current, actuators, commands, nowMillis);
-}
-
-void apply_rules(RealTimeData& current, const struct tm& now, const Commands& commands) {
-    // Create ActuatorState from current data
-    ActuatorState actuators = {};
-    actuators.fan = current.relayStates.fan;
-    actuators.light = current.relayStates.light;
-    actuators.pump = current.relayStates.waterPump;
-    actuators.valve = current.relayStates.valve;
-    
-    // Use the new mode-aware function
-    applyRulesWithModeControl(current, actuators, commands, millis());
-}
