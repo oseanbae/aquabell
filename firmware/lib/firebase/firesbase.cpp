@@ -345,6 +345,7 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
     fields["avgAirTemp"]["doubleValue"] = avgAirT;
     fields["avgAirHumidity"]["doubleValue"] = avgAirH;
     fields["count"]["integerValue"] = count;
+    fields["date"]["stringValue"] = dateStr;
 
     String payload;
     serializeJson(doc, payload);
@@ -741,6 +742,8 @@ void onRTDBStream(AsyncResult &result) {
                     if (!oldAuto && newAuto) {
                         Serial.printf("[RTDB Stream] %s switched to AUTO — triggering rule evaluation\n", name);
                         autoTriggered = true;
+                        extern volatile bool commandsChangedViaStream;
+                        commandsChangedViaStream = true;
                     }
                 }
             }
@@ -792,7 +795,6 @@ void onRTDBStream(AsyncResult &result) {
         // Force sync relay states after rule evaluation
         extern RealTimeData current;   // make sure current holds the latest relay states
         extern Commands currentCommands;
-        Serial.println("[RTDB Stream] Forcing immediate sync after AUTO re-enable...");
         Serial.println("[RTDB Stream] Forcing immediate sync after AUTO re-enable...");
 
         // Directly reflect current actuator GPIO states (true source of truth)

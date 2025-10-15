@@ -161,17 +161,25 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     control_pump(actuators.pump);
     control_valve(actuators.valve);
 
+    // reflect to global current so syncRelayState uses the actual actuators state
+    extern RealTimeData current;
+    current.relayStates.fan       = actuators.fan;
+    current.relayStates.light     = actuators.light;
+    current.relayStates.waterPump = actuators.pump;
+    current.relayStates.valve     = actuators.valve;
+
+
     Serial.printf("[RULE_ENGINE] Final states - Fan:%s(%s) Light:%s(%s) Pump:%s(%s) Valve:%s(%s)\n",
                   actuators.fan ? "ON" : "OFF", actuators.fanAuto ? "AUTO" : "MANUAL",
                   actuators.light ? "ON" : "OFF", actuators.lightAuto ? "AUTO" : "MANUAL",
                   actuators.pump ? "ON" : "OFF", actuators.pumpAuto ? "AUTO" : "MANUAL",
                   actuators.valve ? "ON" : "OFF", actuators.valveAuto ? "AUTO" : "MANUAL");
 
-    // Reset re-enable flags after evaluation
-    actuators.fanAutoJustEnabled   = false;
-    actuators.lightAutoJustEnabled = false;
-    actuators.pumpAutoJustEnabled  = false;
-    actuators.valveAutoJustEnabled = false;
+    // // Reset re-enable flags after evaluation
+    // actuators.fanAutoJustEnabled   = false;
+    // actuators.lightAutoJustEnabled = false;
+    // actuators.pumpAutoJustEnabled  = false;
+    // actuators.valveAutoJustEnabled = false;
 
     // Update previous state trackers
     prevFanAuto   = commands.fan.isAuto;
@@ -273,51 +281,72 @@ void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned l
 
 void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis) {
     static unsigned long lastToggle = 0;
+    static bool pumpWasOn = false;
     static bool firstRun = true;
-    static bool prevPump = false;
 
-    
+    const unsigned long ON_DURATION  = PUMP_ON_DURATION  * 60 * 1000UL;
+    const unsigned long OFF_DURATION = PUMP_OFF_DURATION * 60 * 1000UL;
+    //const unsigned long GRACE_PERIOD_MS = 5000; // 5 sec grace after AUTO re-enable
+
+    // Initialize baseline
     if (firstRun) {
-        lastToggle = nowMillis - (PUMP_OFF_DURATION * 60 * 1000UL);
+        lastToggle = nowMillis - OFF_DURATION; // start as if just completed an off cycle
         firstRun = false;
     }
 
+    // --- When AUTO is re-enabled ---
     if (actuators.pumpAutoJustEnabled) {
         actuators.pumpAutoJustEnabled = false;
-        // Reset schedule timer to immediately trigger ON
-        lastToggle = nowMillis - (PUMP_OFF_DURATION * 60 * 1000UL);
-        Serial.println("[RULE_ENGINE] 💧 Pump AUTO re-enabled — forcing immediate schedule check");
+
+        unsigned long elapsed = nowMillis - lastToggle;
+        bool inOnPhase = pumpWasOn && elapsed < ON_DURATION;
+        bool inOffPhase = !pumpWasOn && elapsed < OFF_DURATION;
+
+        if (inOnPhase) {
+            actuators.pump = true;
+            Serial.printf("[RULE_ENGINE] 💧 Pump AUTO re-enabled — resuming ON phase (%.1f min left)\n",
+                          (ON_DURATION - elapsed) / 60000.0);
+        } else if (inOffPhase) {
+            actuators.pump = false;
+            Serial.printf("[RULE_ENGINE] 💧 Pump AUTO re-enabled — resuming OFF phase (%.1f min left)\n",
+                          (OFF_DURATION - elapsed) / 60000.0);
+        } else {
+            // cycle complete → toggle
+            actuators.pump = !pumpWasOn;
+            lastToggle = nowMillis;
+            Serial.println("[RULE_ENGINE] 💧 Pump AUTO re-enabled — cycle expired, toggling phase");
+        }
+
+        pumpWasOn = actuators.pump;
+        control_pump(actuators.pump);
+        return;
     }
 
+    // --- Normal rule logic below ---
     if (waterLevelLow) {
         if (actuators.pump) {
             actuators.pump = false;
             lastToggle = nowMillis;
+            pumpWasOn = false;
             Serial.println("[RULE_ENGINE] 💧 Pump OFF — float switch LOW");
-        }
-        if (actuators.pump != prevPump) {
-            control_pump(actuators.pump);
-            prevPump = actuators.pump;
+            control_pump(false);
         }
         return;
     }
 
-    const unsigned long ON_DURATION  = PUMP_ON_DURATION  * 60 * 1000UL;
-    const unsigned long OFF_DURATION = PUMP_OFF_DURATION * 60 * 1000UL;
-
-    if (actuators.pump && (nowMillis - lastToggle >= ON_DURATION)) {
+    unsigned long elapsed = nowMillis - lastToggle;
+    if (pumpWasOn && elapsed >= ON_DURATION) {
         actuators.pump = false;
         lastToggle = nowMillis;
+        pumpWasOn = false;
         Serial.println("[RULE_ENGINE] 💧 Pump OFF — schedule");
-    } else if (!actuators.pump && (nowMillis - lastToggle >= OFF_DURATION)) {
+        control_pump(false);
+    } else if (!pumpWasOn && elapsed >= OFF_DURATION) {
         actuators.pump = true;
         lastToggle = nowMillis;
+        pumpWasOn = true;
         Serial.println("[RULE_ENGINE] 💧 Pump ON — schedule");
-    }
-
-    if (actuators.pump != prevPump) {
-        control_pump(actuators.pump);
-        prevPump = actuators.pump;
+        control_pump(true);
     }
 }
 
