@@ -498,34 +498,16 @@ void syncRelayState(const RealTimeData &data, const Commands &commands) {
 
     JsonDocument doc;
 
-    if (commands.fan.isAuto) {
-        doc["fan/value"] = data.relayStates.fan;
-        Serial.println("[RTDB] Syncing FAN state (AUTO mode)");
-    } else Serial.println("[RTDB] Skipping FAN (manual mode)");
+    // Only sync actuators in AUTO mode
+    if (commands.fan.isAuto)    doc["fan/value"] = data.relayStates.fan;
+    if (commands.light.isAuto)  doc["light/value"] = data.relayStates.light;
+    if (commands.pump.isAuto)   doc["pump/value"] = data.relayStates.waterPump;
+    if (commands.valve.isAuto)  doc["valve/value"] = data.relayStates.valve;
 
-    if (commands.light.isAuto) {
-        doc["light/value"] = data.relayStates.light;
-        Serial.println("[RTDB] Syncing LIGHT state (AUTO mode)");
-    } else Serial.println("[RTDB] Skipping LIGHT (manual mode)");
-
-    if (commands.pump.isAuto) {
-        doc["pump/value"] = data.relayStates.waterPump;
-        Serial.println("[RTDB] Syncing PUMP state (AUTO mode)");
-    } else Serial.println("[RTDB] Skipping PUMP (manual mode)");
-
-    if (commands.valve.isAuto) {
-        doc["valve/value"] = data.relayStates.valve;
-        Serial.println("[RTDB] Syncing VALVE state (AUTO mode)");
-    } else Serial.println("[RTDB] Skipping VALVE (manual mode)");
-
-    if (doc.size() == 0) {
-        Serial.println("[RTDB] No AUTO actuators to sync — skipping update");
-        return;
-    }
+    if (doc.size() == 0) return;  // Nothing to sync
 
     String payload;
     serializeJson(doc, payload);
-    Serial.printf("[RTDB] Sync payload: %s\n", payload.c_str());
 
     WiFiClientSecure client;
     client.setInsecure();
@@ -535,15 +517,11 @@ void syncRelayState(const RealTimeData &data, const Commands &commands) {
     https.addHeader("Authorization", "Bearer " + idToken);
 
     int httpResponseCode = https.sendRequest("PATCH", payload);
-    Serial.printf("[RTDB] HTTP Response: %d\n", httpResponseCode);
 
     if (httpResponseCode == 200) {
-        Serial.println("[RTDB] Relay sync successful ✅");
+        Serial.println("[RTDB] Relay sync ✅");
     } else {
-        String response = https.getString();
-        Serial.printf("[RTDB] Relay sync failed: %s\n", https.errorToString(httpResponseCode).c_str());
-        Serial.printf("[RTDB] Response: %s\n", response.c_str());
-        Serial.println("[RTDB] Scheduling non-blocking retry for relay sync");
+        Serial.printf("[RTDB] Relay sync failed (%d)\n", httpResponseCode);
         initRetryState(url, payload, true);
     }
 
@@ -637,13 +615,6 @@ void processPatchEvent(const String& dataPath, JsonDocument& patchData, Commands
 
 // Stream callback function to handle real-time command updates
 void onRTDBStream(AsyncResult &result) {
-    if (result.isEvent()) {
-        Serial.printf("Event task: %s, msg: %s, code: %d\n",
-                      result.uid().c_str(),
-                      result.appEvent().message().c_str(),
-                      result.appEvent().code());
-    }
-
     if (result.isError()) {
         Serial.printf("Error task: %s, msg: %s, code: %d\n",
                       result.uid().c_str(),

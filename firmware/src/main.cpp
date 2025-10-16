@@ -216,7 +216,6 @@ bool readSensors(unsigned long now, RealTimeData &data) {
         return false; 
     }
 
-    Serial.println("📊 Reading all sensors...");
     bool updated = false;
 
     // --- Water Temp (°C) ---

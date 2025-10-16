@@ -87,17 +87,17 @@
 // Maximum time to keep refill valve open before safety lock
 #define VALVE_MAX_OPEN_MS       (30UL * 60UL * 1000UL)  // 30 minutes
 
-#define RELAY_SYNC_COOLDOWN 3000UL
+#define RELAY_SYNC_COOLDOWN 2000UL
 
 //=== WIFI Configuration ===
 //JP'S HOME WIFI
-#define WIFI_SSID   "meow"
-#define WIFI_PASS   "helloworld2025"
+// #define WIFI_SSID   "meow"
+// #define WIFI_PASS   "helloworld2025"
 
 //Capstone wifi
 // #define WIFI_SSID           "Capstone"
-// #define WIFI_PASS           "capstone"
-// #define WIFI_SSID           "Capstone-2.4G-ext"
+#define WIFI_PASS           "capstone"
+#define WIFI_SSID           "Capstone-2.4G-ext"
 
 //IPEN WIFI
 // #define WIFI_SSID           "Ipen"
