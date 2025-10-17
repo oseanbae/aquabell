@@ -21,7 +21,6 @@ struct ActuatorState {
     // Emergency overrides
     bool emergencyMode = false;
     bool lowWaterEmergency = false;
-    bool highTempEmergency = false;
     
     // Manual overrides
     bool fanManual = false;

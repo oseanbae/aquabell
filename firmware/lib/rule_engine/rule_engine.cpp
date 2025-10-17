@@ -62,22 +62,17 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
 
     // ===== 1. EMERGENCY OVERRIDES =====
     actuators.emergencyMode = false;
-    actuators.lowWaterEmergency = data.floatTriggered;
-    actuators.highTempEmergency = !isnan(data.airTemp) && data.airTemp >= TEMP_EMERGENCY;
+    actuators.lowWaterEmergency = data.floatTriggered;  // float switch active = low water
 
-    if (actuators.lowWaterEmergency || actuators.highTempEmergency) {
+    // --- Emergency Mode: only low water for now ---
+    if (actuators.lowWaterEmergency) {
         actuators.emergencyMode = true;
         Serial.println("[RULE_ENGINE] 🚨 EMERGENCY MODE ACTIVATED");
+        Serial.println("[RULE_ENGINE] 💧 Low water emergency - shutting off pump, opening valve");
 
-        if (actuators.lowWaterEmergency) {
-            Serial.println("[RULE_ENGINE] 💧 Low water emergency - shutting off pump, opening valve");
-            actuators.pump = false;
-            actuators.valve = true;
-        }
-        if (actuators.highTempEmergency) {
-            Serial.println("[RULE_ENGINE] 🌡️ High temperature emergency - turning on fan");
-            actuators.fan = true;
-        }
+        // Disable critical actuators
+        actuators.pump = false;
+        actuators.valve = true; // open to refill if available
 
         control_fan(actuators.fan);
         control_light(actuators.light);
@@ -384,7 +379,6 @@ void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, u
         prevFan = actuators.fan;
     }
 }
-
 
 void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis) {
     static bool prevLight = false;

@@ -6,33 +6,56 @@
 // DHT sensor configuration
 DHT dht(DHT_PIN, DHT_TYPE);
 
+// Internal smoothed values
+static float smoothedTemp = NAN;
+static float smoothedHumidity = NAN;
+
+// Tuning constant: 0.1 = heavy smoothing (slow response), 0.3 = faster
+const float DHT_SMOOTH_ALPHA = 0.25f;
+
+// Internal smoothing helper
+float smoothValue(float current, float previous, float alpha) {
+    if (isnan(current)) return previous; // ignore invalid samples
+    if (isnan(previous)) return current; // first valid sample
+    return (alpha * current) + ((1.0f - alpha) * previous);
+}
+
 // Initialize the DHT sensor
 void dht_sensor_init() {
     dht.begin();
+    smoothedTemp = NAN;
+    smoothedHumidity = NAN;
+    Serial.println("[DHT] Initialized with smoothing enabled");
 }
 
-// Read temperature in Celsius (raw, only clamp to physical safe range)
+// Read temperature in Celsius (smoothed)
 float read_dhtTemp() {
     float temp = dht.readTemperature();
     if (isnan(temp)) {
-        Serial.println("DHT temperature read failed.");
-        return NAN;
+        Serial.println("[DHT] Temperature read failed");
+        return smoothedTemp; // return last valid smoothed value
     }
-    // DHT spec range check: -40 to 80 °C
-    if (temp < -40.0f) temp = -40.0f;
-    if (temp > 80.0f)  temp = 80.0f;
-    return temp;
+
+    // Clamp to physical range
+    temp = constrain(temp, -40.0f, 80.0f);
+
+    // Apply smoothing filter
+    smoothedTemp = smoothValue(temp, smoothedTemp, DHT_SMOOTH_ALPHA);
+    return smoothedTemp;
 }
 
-// Read humidity in %
+// Read humidity in % (smoothed)
 float read_dhtHumidity() {
     float hum = dht.readHumidity();
     if (isnan(hum)) {
-        Serial.println("DHT humidity read failed.");
-        return NAN;
+        Serial.println("[DHT] Humidity read failed");
+        return smoothedHumidity; // return last valid smoothed value
     }
-    // Clamp to physical 0–100 %
-    if (hum < 0.0f)   hum = 0.0f;
-    if (hum > 100.0f) hum = 100.0f;
-    return hum;
+
+    // Clamp to physical range
+    hum = constrain(hum, 0.0f, 100.0f);
+
+    // Apply smoothing filter
+    smoothedHumidity = smoothValue(hum, smoothedHumidity, DHT_SMOOTH_ALPHA);
+    return smoothedHumidity;
 }
