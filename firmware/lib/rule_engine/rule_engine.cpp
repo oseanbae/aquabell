@@ -353,43 +353,29 @@ void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned lo
 void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis) {
     if (isnan(airTemp) || isnan(humidity)) return;
 
-    static unsigned long fanOnSince = 0;
-    static unsigned long fanOffSince = 0;
     static bool prevFan = false;
 
     // Reset tracking if auto mode just got re-enabled
     if (actuators.fanAutoJustEnabled) {
-        fanOnSince = 0;
-        fanOffSince = 0;
         actuators.fanAutoJustEnabled = false;
     }
 
     // Thresholds
-    const bool tempEmergency = airTemp >= TEMP_EMERGENCY;
-    const bool tempHigh      = airTemp >= TEMP_ON_THRESHOLD;
-    const bool tempLow       = airTemp <  TEMP_OFF_THRESHOLD;
-    const bool humHigh       = humidity >= HUMIDITY_ON_THRESHOLD;
+    const bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;   // e.g. 28°C
+    const bool tempLow  = airTemp < TEMP_OFF_THRESHOLD;   // e.g. 26.5°C
+    const bool humHigh  = humidity >= HUMIDITY_ON_THRESHOLD; // e.g. 90%
 
-    // Determine desired action
-    bool shouldTurnOn  = (!actuators.fan) && (tempEmergency || tempHigh || humHigh);
-    bool shouldTurnOff = (actuators.fan && tempLow);
-
-    // Max runtime safety (fan off after continuous run)
-    if (actuators.fan && (nowMillis - fanOnSince >= FAN_MAX_CONTINUOUS_MS)) {
-        shouldTurnOff = true;
-        Serial.println("[RULE_ENGINE] 🌀 Fan AUTO OFF — exceeded max runtime");
-    }
-
-    // Apply decisions with debouncing
-    if (shouldTurnOn && (nowMillis - fanOffSince >= FAN_MIN_COOLDOWN_MS)) {
-        actuators.fan = true;
-        fanOnSince = nowMillis;
-        Serial.printf("[RULE_ENGINE] 🌀 Fan AUTO ON — T=%.1f°C, H=%.1f%%\n", airTemp, humidity);
-    }
-    else if (shouldTurnOff && (nowMillis - fanOnSince >= FAN_MINUTE_RUNTIME)) {
-        actuators.fan = false;
-        fanOffSince = nowMillis;
-        Serial.println("[RULE_ENGINE] ✅ Fan AUTO OFF — normalized or cooldown active");
+    // Instant logic — no cooldowns, no timers
+    if (tempHigh || humHigh) {
+        if (!actuators.fan) {
+            actuators.fan = true;
+            Serial.printf("[RULE_ENGINE] 🌀 Fan AUTO ON — T=%.1f°C, H=%.1f%%\n", airTemp, humidity);
+        }
+    } else if (tempLow) {
+        if (actuators.fan) {
+            actuators.fan = false;
+            Serial.println("[RULE_ENGINE] ✅ Fan AUTO OFF — normalized");
+        }
     }
 
     // Apply hardware state only if changed
