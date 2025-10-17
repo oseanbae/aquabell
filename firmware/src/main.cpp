@@ -109,6 +109,12 @@ void loop() {
         }
     }
 
+    // === Refresh Firebase token periodically ===
+    if (WiFi.status() == WL_CONNECTED) {
+        safeTokenRefresh(); // ✅ Non-blocking, auto-handles expiry and re-sign-in
+    }
+
+    // === Periodic NTP Time Sync ===
     periodicTimeSync();
 
     // === Handle Firebase Stream ===
@@ -171,23 +177,28 @@ void loop() {
     if (isRetryInProgress()) processRetry();
 
     // === Batch Firestore Logging ===
-    static unsigned long lastBatchLog = 0;
     static RealTimeData logBuffer[60];
     static int logIndex = 0;
+    static unsigned long lastBatchLog = 0;
     const unsigned long batchInterval = 600000;
 
     if (WiFi.status() == WL_CONNECTED) {
-        if (sensorsUpdated && logIndex < 60) logBuffer[logIndex++] = current;
+        if (sensorsUpdated && logIndex < 60)
+            logBuffer[logIndex++] = current;
 
         bool intervalElapsed = (nowMillis - lastBatchLog >= batchInterval);
         bool bufferFull = (logIndex >= 60);
 
-        if (intervalElapsed || bufferFull) {
+        if ((intervalElapsed || bufferFull) && logIndex > 0) {
             time_t timestamp = getUnixTime();
-            if (timestamp > 0 && logIndex > 0) {
-                pushBatchLogToFirestore(logBuffer, logIndex, timestamp);
+            if (timestamp > 0) {
+                bool success = pushBatchLogToFirestore(logBuffer, logIndex, timestamp);
+                if (success) {
+                    logIndex = 0; // ✅ Only clear after success
+                } else {
+                    Serial.println("[Firestore] Retaining batch for next retry");
+                }
             }
-            logIndex = 0;
             lastBatchLog = nowMillis;
         }
     }

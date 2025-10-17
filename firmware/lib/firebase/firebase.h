@@ -20,12 +20,12 @@ struct Commands {
 };
 
 void pushToRTDBLive(const RealTimeData &data);
-void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp);
-void firebaseSignIn();
+bool pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp);
+bool firebaseSignIn();
 bool fetchControlCommands();
 void syncRelayState(const RealTimeData &data, const Commands& commands);
-void refreshIdToken();
-
+bool refreshIdToken();
+void safeTokenRefresh();
 // New FirebaseClient stream-based functions
 void startFirebaseStream();
 void handleFirebaseStream();

@@ -27,16 +27,21 @@ WiFiClientSecure ssl_client;
 AsyncClientClass aClient;
 FirebaseApp app;
 RealtimeDatabase Database;
+
 bool streamConnected = false;
 unsigned long lastStreamReconnectAttempt = 0;
 const unsigned long STREAM_RECONNECT_INTERVAL = 30000; // 30 seconds
 static bool firebaseAppInitialized = false;
 static bool databaseConfigured = false;
 static DefaultNetwork defaultNet; // provides network_config_data for built-in WiFi
+
 // Readiness/sync flags
 static bool firebaseReady = false;                 // true when app.ready() once
 static bool initialCommandsSynced = false;         // true after first /commands fetch or full snapshot
 static bool needResyncOnReconnect = true;          // fetch commands when connectivity/auth returns
+
+// Forward declarations
+extern void evaluateRules(bool forceImmediate);
 
 // Non-blocking retry state for RTDB PATCH requests
 struct RetryState {
@@ -49,10 +54,16 @@ struct RetryState {
     int maxRetries = 3;
     bool isRelaySync = false; // true for syncRelayState, false for other operations
 };
-extern void evaluateRules(bool forceImmediate);
 static RetryState retryState;
 
-void firebaseSignIn() {
+bool tokenValid = true;
+unsigned long lastTokenAttempt = 0;
+
+// ==========================================================
+//  AUTH CORE LOGIC
+// ==========================================================
+
+bool firebaseSignIn() {
     WiFiClientSecure client;
     client.setInsecure();
 
@@ -60,10 +71,9 @@ void firebaseSignIn() {
     https.begin(client, "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" FIREBASE_API_KEY);
     https.addHeader("Content-Type", "application/json");
 
-    String payload = "{\"email\": \"" USER_EMAIL "\", \"password\": \"" USER_PASSWORD "\", \"returnSecureToken\": true}";
+    String payload = "{\"email\":\"" USER_EMAIL "\",\"password\":\"" USER_PASSWORD "\",\"returnSecureToken\":true}";
 
     int httpResponseCode = https.POST(payload);
-
     if (httpResponseCode == 200) {
         String response = https.getString();
         JsonDocument doc;
@@ -72,23 +82,27 @@ void firebaseSignIn() {
         idToken = doc["idToken"].as<String>();
         refreshToken = doc["refreshToken"].as<String>();
         int expiresIn = doc["expiresIn"].as<int>();
-        tokenExpiryTime = millis() + (expiresIn - 180) * 1000UL; // Refresh 3 min before expiry
+        tokenExpiryTime = millis() + (expiresIn - 180) * 1000UL;
 
-        Serial.println("[Auth] Signed in successfully.");
         firebaseReady = true;
-    } else {
-        Serial.print("[Auth] Failed to sign in: ");
-        Serial.println(https.errorToString(httpResponseCode));
-    }
+        tokenValid = true;
+        Serial.println("[Auth] ✅ Signed in successfully");
 
-    https.end();
+        https.end();
+        return true;
+    } else {
+        firebaseReady = false;
+        tokenValid = false;
+        Serial.printf("[Auth] ❌ Sign-in failed: %s\n", https.errorToString(httpResponseCode).c_str());
+        https.end();
+        return false;
+    }
 }
 
-void refreshIdToken() {
+bool refreshIdToken() {
     if (refreshToken == "") {
-        Serial.println("[Auth] No refresh token available. Re-signing in.");
-        firebaseSignIn();
-        return;
+        Serial.println("[Auth] No refresh token, re-signing in...");
+        return firebaseSignIn();
     }
 
     WiFiClientSecure client;
@@ -110,15 +124,38 @@ void refreshIdToken() {
         idToken = doc["id_token"].as<String>();
         refreshToken = doc["refresh_token"].as<String>();
         int expiresIn = doc["expires_in"].as<int>();
-        tokenExpiryTime = millis() + (expiresIn - 60) * 1000UL; // Refresh 1 min before expiry
+        tokenExpiryTime = millis() + (expiresIn - 60) * 1000UL; // refresh 1min early
 
-        Serial.println("[Auth] Token refreshed successfully.");
+        Serial.println("[Auth] 🔁 Token refreshed successfully");
+        https.end();
+        return true;
     } else {
-        Serial.print("[Auth] Failed to refresh token: ");
-        Serial.println(https.errorToString(httpResponseCode));
+        Serial.printf("[Auth] ⚠️ Token refresh failed: %s\n", https.errorToString(httpResponseCode).c_str());
+        https.end();
+        return false;
     }
+}
 
-    https.end();
+void safeTokenRefresh() {
+    unsigned long now = millis();
+    const unsigned long retryInterval = 300000; // 5 minutes
+
+    if (!tokenValid && (now - lastTokenAttempt < retryInterval))
+        return; // still within cooldown
+
+    if (millis() > tokenExpiryTime || !tokenValid) {
+        Serial.println("[Auth] Refreshing ID token...");
+        lastTokenAttempt = now;
+
+        bool refreshed = refreshIdToken();
+        if (refreshed) {
+            tokenValid = true;
+            Serial.println("[Auth] ✅ Token refresh successful");
+        } else {
+            tokenValid = false;
+            Serial.println("[Auth] ⚠️ Token refresh failed — retry in 5min");
+        }
+    }
 }
 
 // ===== NON-BLOCKING RETRY MANAGEMENT =====
@@ -293,18 +330,16 @@ void pushToRTDBLive(const RealTimeData &data) {
     https.end();
 }
 
-void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
-    // Check and refresh token before Firestore call
+bool pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
     if (millis() > tokenExpiryTime) {
         Serial.println("[Firestore] Token expired, refreshing before pushBatchLogToFirestore");
         refreshIdToken();
     }
 
-    if (size <= 0) return;
+    if (size <= 0) return false;
 
-    // Compute 5-min averages over the buffer
+    // Compute averages (same as before)
     double sumWater = 0, sumPH = 0, sumDO = 0, sumNTU = 0, sumAirT = 0, sumAirH = 0;
-    int count = 0;
     for (int i = 0; i < size; i++) {
         sumWater += buffer[i].waterTemp;
         sumPH += buffer[i].pH;
@@ -312,30 +347,27 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
         sumNTU += buffer[i].turbidityNTU;
         sumAirT += buffer[i].airTemp;
         sumAirH += buffer[i].airHumidity;
-        count++;
     }
+    int count = size;
+    float avgWater = sumWater / count;
+    float avgPH = sumPH / count;
+    float avgDO = sumDO / count;
+    float avgNTU = sumNTU / count;
+    float avgAirT = sumAirT / count;
+    float avgAirH = sumAirH / count;
 
-    float avgWater = count ? (float)(sumWater / count) : 0;
-    float avgPH = count ? (float)(sumPH / count) : 0;
-    float avgDO = count ? (float)(sumDO / count) : 0;
-    float avgNTU = count ? (float)(sumNTU / count) : 0;
-    float avgAirT = count ? (float)(sumAirT / count) : 0;
-    float avgAirH = count ? (float)(sumAirH / count) : 0;
-
-    // Format date string from timestamp
+    // Create timestamped doc ID
     struct tm timeinfo;
-    char dateStr[11];  // YYYY-MM-DD + null terminator
-    if (localtime_r(&timestamp, &timeinfo)) {
+    char dateStr[11];
+    if (localtime_r(&timestamp, &timeinfo))
         strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", &timeinfo);
-    } else {
-        strcpy(dateStr, "1970-01-01"); // Fallback
-    }
-    
-    String timestampStr = String(timestamp);
+    else
+        strcpy(dateStr, "1970-01-01");
 
-    String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID "/databases/(default)/documents/sensor_logs/" + String(dateStr) + "_" + timestampStr;
+    String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID
+                 "/databases/(default)/documents/sensor_logs/" + String(dateStr) + "_" + String(timestamp);
 
-    JsonDocument doc; // compact averaged payload
+    JsonDocument doc;
     JsonObject fields = doc["fields"].to<JsonObject>();
     fields["timestamp"]["integerValue"] = (long long)timestamp;
     fields["avgWaterTemp"]["doubleValue"] = avgWater;
@@ -359,16 +391,15 @@ void pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
     https.addHeader("Authorization", "Bearer " + idToken);
 
     int httpResponseCode = https.sendRequest("PATCH", payload);
+    https.end();
+
     if (httpResponseCode == 200) {
-        Serial1.println("[Firestore] Batch log updated.");
-    } else {
-        Serial.printf("[Firestore] Batch failed: %s\n", https.errorToString(httpResponseCode).c_str());
-        delay(5000);
-        httpResponseCode = https.sendRequest("PATCH", payload);
-        if (httpResponseCode == 200) Serial.println("[Firestore] ✅ Batch retry successful");
+        Serial.println("[Firestore] ✅ Batch log updated successfully");
+        return true;
     }
 
-    https.end();
+    Serial.printf("[Firestore] ❌ Failed: %d — will retry later\n", httpResponseCode);
+    return false;
 }
 
 bool fetchControlCommands() {
@@ -783,96 +814,108 @@ void onRTDBStream(AsyncResult &result) {
 }
 
 // Initialize and start the Firebase RTDB stream
+// Initialize and start the Firebase RTDB stream (token-aware)
 void startFirebaseStream() {
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("[RTDB Stream] WiFi not connected, cannot start stream");
+        Serial.println("[RTDB Stream] ❌ WiFi not connected, cannot start stream");
+        return;
+    }
+
+    if (!tokenValid) {
+        Serial.println("[RTDB Stream] ⚠️ Token invalid, delaying stream start until re-auth");
         return;
     }
 
     Serial.println("[RTDB Stream] Starting Firebase RTDB stream...");
 
-    // One-time app initialization (non-blocking); App handles auth internally
+    // One-time app initialization
     if (!firebaseAppInitialized) {
-        // Bind WiFi SSL client and default network to AsyncClient before auth
         ssl_client.setInsecure();
         aClient.setNetwork(ssl_client, getNetwork(defaultNet));
 
         UserAuth user_auth(FIREBASE_API_KEY, USER_EMAIL, USER_PASSWORD, 3000);
         initializeApp(aClient, app, getAuth(user_auth), onRTDBStream, "authTask");
+
         firebaseAppInitialized = true;
         Serial.println("[RTDB Stream] FirebaseApp initialization requested");
     }
 
-    // Only start stream when app is ready (authenticated)
+    // Wait for Firebase app to finish auth handshake
     if (!app.ready()) {
-        Serial.println("[RTDB Stream] App not ready yet (auth in progress). Will try again later.");
+        Serial.println("[RTDB Stream] ⏳ App not ready yet (auth in progress). Will try again later.");
         lastStreamReconnectAttempt = millis();
         return;
     }
 
-    // Mark firebase ready and fetch commands once before starting stream
+    // Mark Firebase as ready once the app is live
     firebaseReady = true;
 
-    // On fresh start or after reconnect, fetch latest /commands to avoid overwriting manual states
+    // Fetch latest /commands before subscribing to avoid overwriting manual changes
     if (needResyncOnReconnect || !initialCommandsSynced) {
         Serial.println("[RTDB] Fetching /commands before starting stream...");
         bool manualApplied = fetchControlCommands();
-        if (manualApplied) {
-            Serial.println("[RTDB] Manual states applied from initial fetch");
-        }
-        initialCommandsSynced = true; // consider synced after successful GET (even if no manual)
+        if (manualApplied) Serial.println("[RTDB] Manual states applied from initial fetch");
+        initialCommandsSynced = true;
         needResyncOnReconnect = false;
     }
 
-    // Get RealtimeDatabase instance and set base URL once app is available
+    // Configure Realtime Database
     app.getApp<RealtimeDatabase>(Database);
     Database.url("https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app");
 
-    // Start listening to the commands path via callback-based stream
+    // Start stream listener
     String path = "/commands/" DEVICE_ID;
     Database.get(aClient, path, onRTDBStream, "streamTask");
 
-    Serial.println("[RTDB Stream] Stream start requested");
-    streamConnected = false; // will flip true on first available/event
+    Serial.println("[RTDB Stream] ✅ Stream start requested");
+    streamConnected = false;
     lastStreamReconnectAttempt = millis();
     databaseConfigured = true;
 }
 
-// Handle Firebase stream - must be called in loop()
+// Robust stream loop handling (WiFi + token + reauth aware)
 void handleFirebaseStream() {
-    // Check WiFi connection first
+    unsigned long now = millis();
+
+    // --- Handle lost WiFi ---
     if (WiFi.status() != WL_CONNECTED) {
         if (streamConnected) {
-            Serial.println("[RTDB Stream] WiFi disconnected, marking stream as disconnected");
+            Serial.println("[RTDB Stream] ⚠️ WiFi lost, marking stream disconnected");
             streamConnected = false;
         }
-        // WiFi lost; require resync on reconnect and block RTDB writes
         initialCommandsSynced = false;
         needResyncOnReconnect = true;
         return;
     }
-    
-    // Ensure auth/initialization progresses
-    app.loop();
 
-    if (!streamConnected) {
-        unsigned long now = millis();
-        if (now - lastStreamReconnectAttempt >= STREAM_RECONNECT_INTERVAL) {
-            Serial.println("[RTDB Stream] Attempting to (re)start stream...");
-            startFirebaseStream();
+    // --- Handle expired or invalid token ---
+    if (!tokenValid) {
+        static unsigned long lastLog = 0;
+        if (now - lastLog > 5000) { // avoid spamming serial
+            Serial.println("[RTDB Stream] ⚠️ Token invalid — holding stream reconnection");
+            lastLog = now;
         }
-        // Drive DB state only after it's configured
-        if (databaseConfigured) {
-            Database.loop();
-        }
+        safeTokenRefresh();
         return;
     }
 
-    // Process database loop when connected
+    // --- Drive Firebase app state machine ---
+    app.loop();
+
+    // --- Attempt reconnect if stream lost ---
+    if (!streamConnected) {
+        if (now - lastStreamReconnectAttempt >= STREAM_RECONNECT_INTERVAL) {
+            Serial.println("[RTDB Stream] 🔄 Attempting to (re)start stream...");
+            startFirebaseStream();
+        }
+    }
+
+    // --- Drive DB state when configured ---
     if (databaseConfigured) {
         Database.loop();
     }
 }
+
 
 // Check if the Firebase stream is currently connected
 bool isStreamConnected() {
