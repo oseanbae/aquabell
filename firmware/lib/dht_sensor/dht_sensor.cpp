@@ -25,14 +25,12 @@ void dht_sensor_init() {
     dht.begin();
     smoothedTemp = NAN;
     smoothedHumidity = NAN;
-    Serial.println("[DHT] Initialized with smoothing enabled");
 }
 
 // Read temperature in Celsius (smoothed)
 float read_dhtTemp() {
     float temp = dht.readTemperature();
     if (isnan(temp)) {
-        Serial.println("[DHT] Temperature read failed");
         return smoothedTemp; // return last valid smoothed value
     }
 
@@ -48,7 +46,6 @@ float read_dhtTemp() {
 float read_dhtHumidity() {
     float hum = dht.readHumidity();
     if (isnan(hum)) {
-        Serial.println("[DHT] Humidity read failed");
         return smoothedHumidity; // return last valid smoothed value
     }
 
