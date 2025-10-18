@@ -364,8 +364,13 @@ bool pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp) {
     else
         strcpy(dateStr, "1970-01-01");
 
-    String url = "https://firestore.googleapis.com/v1/projects/" FIREBASE_PROJECT_ID
-                 "/databases/(default)/documents/sensor_logs/" + String(dateStr) + "_" + String(timestamp);
+    String url = String("https://firestore.googleapis.com/v1/projects/") +
+             FIREBASE_PROJECT_ID +
+             "/databases/(default)/documents/sensor_logs/" +
+             String(dateStr) +
+             "/entries/" +
+             String(timestamp);
+
 
     JsonDocument doc;
     JsonObject fields = doc["fields"].to<JsonObject>();
