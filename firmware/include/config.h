@@ -54,7 +54,7 @@
 #define VALVE_RELAY_PIN       16
 
 // Fan Control Thresholds (with hysteresis)
-#define TEMP_ON_THRESHOLD     28.0f
+#define TEMP_ON_THRESHOLD     29.0f
 #define TEMP_OFF_THRESHOLD    26.5f
 #define HUMIDITY_ON_THRESHOLD 90.0f
 
@@ -85,8 +85,8 @@
 
 //=== WIFI Configuration ===
 //JP'S HOME WIFI
-#define WIFI_SSID   "meow"
-#define WIFI_PASS   "helloworld2025"
+// #define WIFI_SSID   "meow"
+// #define WIFI_PASS   "helloworld2025"
 
 //Capstone wifi
 // #define WIFI_SSID           "Capstone"
@@ -103,5 +103,5 @@
 
 
 //GOMO WIFI
-// #define WIFI_SSID           "OREOCHROMIS"
-// #define WIFI_PASS           "AquaCapsicum"   
+#define WIFI_SSID           "OREOCHROMIS"
+#define WIFI_PASS           "AquaCapsicum"

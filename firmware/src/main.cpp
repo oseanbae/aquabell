@@ -15,12 +15,12 @@
 #include "time_utils.h"
 
 // === CONSTANTS ===
-#define USE_DHT_MOCK true
+#define USE_DHT_MOCK false
 #define USE_PH_MOCK true
 #define USE_DO_MOCK true
 #define USE_TURBIDITY_MOCK true
-#define USE_WATERTEMP_MOCK true
-#define USE_FLOATSWITCH_MOCK true
+#define USE_WATERTEMP_MOCK false
+#define USE_FLOATSWITCH_MOCK false
 
 // === GLOBAL STATES ===
 RealTimeData current = {};

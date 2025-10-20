@@ -350,17 +350,42 @@ void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, u
 
     static bool prevFan = false;
 
-    // Reset tracking if auto mode just got re-enabled
+    // Handle re-enabling of AUTO mode
     if (actuators.fanAutoJustEnabled) {
         actuators.fanAutoJustEnabled = false;
+
+        // Immediately determine correct state
+        const bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;       // e.g. 28°C
+        const bool tempLow  = airTemp < TEMP_OFF_THRESHOLD;       // e.g. 26.5°C
+        const bool humHigh  = humidity >= HUMIDITY_ON_THRESHOLD;  // e.g. 90%
+
+        bool newFanState = actuators.fan;
+
+        if (tempHigh || humHigh) {
+            newFanState = true;
+        } else if (tempLow) {
+            newFanState = false;
+        }
+
+        // Apply immediate correction
+        if (newFanState != actuators.fan) {
+            actuators.fan = newFanState;
+            control_fan(newFanState);
+            Serial.printf(
+                "[RULE_ENGINE] 🔁 Fan AUTO re-sync — now %s (T=%.1f°C, H=%.1f%%)\n",
+                newFanState ? "ON" : "OFF", airTemp, humidity
+            );
+        }
+
+        // Skip rest of logic this cycle
+        return;
     }
 
-    // Thresholds
-    const bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;   // e.g. 28°C
-    const bool tempLow  = airTemp < TEMP_OFF_THRESHOLD;   // e.g. 26.5°C
-    const bool humHigh  = humidity >= HUMIDITY_ON_THRESHOLD; // e.g. 90%
+    // 🧠 Normal AUTO control logic
+    const bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;
+    const bool tempLow  = airTemp < TEMP_OFF_THRESHOLD;
+    const bool humHigh  = humidity >= HUMIDITY_ON_THRESHOLD;
 
-    // Instant logic — no cooldowns, no timers
     if (tempHigh || humHigh) {
         if (!actuators.fan) {
             actuators.fan = true;
@@ -373,7 +398,6 @@ void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, u
         }
     }
 
-    // Apply hardware state only if changed
     if (actuators.fan != prevFan) {
         control_fan(actuators.fan);
         prevFan = actuators.fan;
