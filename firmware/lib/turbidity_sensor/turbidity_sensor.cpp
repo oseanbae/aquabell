@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "config.h"
 
+
 void turbidity_sensor_init() {
     pinMode(TURBIDITY_PIN, INPUT);
     delay(500); // Let voltage stabilize
@@ -11,25 +12,25 @@ float readTurbidityVoltage() {
     long sum = 0;
     for (int i = 0; i < NUM_SAMPLES; ++i) {
         sum += analogRead(TURBIDITY_PIN);
-        delay(5); // Basic filtering
+        delay(5); // Simple noise filtering
     }
     float avgRaw = sum / float(NUM_SAMPLES);
-    return avgRaw * (VOLTAGE_REF / ADC_MAX);  // Returns voltage at ESP32 ADC pin
+    return avgRaw * (VOLTAGE_REF / ADC_MAX);  // Voltage at ESP32 ADC pin
 }
 
 // === Convert voltage to NTU ===
 float read_turbidity() {
-    float v_adc = readTurbidityVoltage();                // Voltage at ESP32 pin (0–3.0V)
-    float v_sensor = v_adc * SENSOR_VOLTAGE_GAIN;      // Actual sensor output (0–4.5V)
-    float ntu = NTU_OFFSET + NTU_SLOPE * v_sensor;     // Linear mapping
-    return max(ntu, 0.0f);                              // Clamp negative values
+    float v_adc = readTurbidityVoltage();           // Voltage at ESP32 ADC pin
+    float v_sensor = v_adc * SENSOR_VOLTAGE_GAIN;   // Actual sensor output voltage
+    float ntu = NTU_OFFSET + NTU_SLOPE * v_sensor;  // Linear mapping model
+    return max(ntu, 0.0f);                          // Prevent negatives
 }
 
-// Classify water quality based on NTU
+// === Interpret turbidity level ===
 const char* classifyTurbidity(float ntu) {
-    if (ntu <= 50)  return "Clear";               // Optimal system condition
-    if (ntu <= 100) return "Slightly Cloudy";     // Still acceptable
-    if (ntu <= 200) return "Cloudy";              // Requires monitoring
-    if (ntu <= 500) return "Poor";                // Likely filter issues
-    return "Very Poor";                           // Critical – urgent attention
+    if (ntu <= 50.0f)   return "Clear";
+    if (ntu <= 100.0f)  return "Slightly Cloudy";
+    if (ntu <= 200.0f)  return "Cloudy";
+    if (ntu <= 500.0f)  return "Poor";
+    return "Very Poor";
 }
