@@ -29,12 +29,10 @@ void evaluateRules(bool forceImmediate) {
     bool fbReady = isFirebaseReady();
     bool cmdsSynced = isInitialCommandsSynced();
 
-    if (wifiUp && (!fbReady || !cmdsSynced)) {
-        Serial.println("[EVAL] Firebase not ready — holding actuators OFF");
-        actuators.fan = false;
-        actuators.light = false;
-        actuators.pump = false;
-        actuators.valve = false;
+    // Allow local automation even if Firebase is not ready
+    if (!wifiUp || !fbReady || !cmdsSynced) {
+        Serial.println("[EVAL] Firebase/WiFi not ready — running LOCAL automation only");
+        applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
         return;
     }
 
@@ -61,6 +59,7 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     Serial.println("[RULE_ENGINE] Applying mode-aware rules: AUTO=ESP32 control, MANUAL=RTDB control");
 
     // ===== 1. EMERGENCY OVERRIDES =====
+    static bool prevEmergency = false;
     actuators.emergencyMode = false;
     actuators.lowWaterEmergency = data.floatTriggered;  // float switch active = low water
 
@@ -79,6 +78,15 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
         control_pump(actuators.pump);
         control_valve(actuators.valve);
         return;
+    }
+
+    // Emergency cleared → reset valve if left ON
+    if (prevEmergency && !actuators.lowWaterEmergency) {
+        actuators.emergencyMode = false;
+        actuators.valve = false;
+        Serial.println("[RULE_ENGINE] ✅ Emergency cleared — valve closed");
+        control_valve(false);
+        prevEmergency = false;
     }
 
     // ===== 2. AUTO/MANUAL MODE PROCESSING =====
@@ -226,51 +234,56 @@ void apply_rules(RealTimeData& current, const struct tm& now, const Commands& co
 void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis) {
     static unsigned long floatLowSince  = 0;
     static unsigned long floatHighSince = 0;
-    static unsigned long valveOpenSince = 0;
-    static bool prevValve = false;
+    static bool intentPrinted = false;
+    static bool prevValveState = false;
 
     // Reset timers when auto mode re-enabled
     if (actuators.valveAutoJustEnabled) {
         floatLowSince = 0;
         floatHighSince = 0;
-        valveOpenSince = 0;
+        intentPrinted = false;
         actuators.valveAutoJustEnabled = false;
     }
 
-    // Track float changes
+    // Track float transitions
     if (waterLevelLow) {
         if (floatLowSince == 0) floatLowSince = nowMillis;
         floatHighSince = 0;
+        if (!intentPrinted && !actuators.valve) {
+            Serial.println("[RULE_ENGINE] [INTENT] Float LOW detected — valve about to OPEN");
+            intentPrinted = true;
+        }
     } else {
         if (floatHighSince == 0) floatHighSince = nowMillis;
         floatLowSince = 0;
+        if (!intentPrinted && actuators.valve) {
+            Serial.println("[RULE_ENGINE] [INTENT] Float HIGH detected — valve about to CLOSE");
+            intentPrinted = true;
+        }
     }
 
     bool lowStable  = waterLevelLow  && (nowMillis - floatLowSince  >= FLOAT_LOW_DEBOUNCE_MS);
     bool highStable = !waterLevelLow && (nowMillis - floatHighSince >= FLOAT_HIGH_DEBOUNCE_MS);
 
-    // Trigger valve ON when low level is stable
+    // Stable LOW → valve ON
     if (lowStable && !actuators.valve) {
         actuators.valve = true;
-        valveOpenSince = nowMillis;
-        Serial.println("[RULE_ENGINE] 🚰 Valve AUTO OPEN — low water detected");
+        intentPrinted = false; // reset after applying action
+        Serial.println("[RULE_ENGINE] 🚰 Valve AUTO OPEN — low water confirmed");
     }
 
-    // Trigger valve OFF when high level stable or timeout reached
-    if (actuators.valve) {
-        bool timeout = (nowMillis - valveOpenSince >= VALVE_MAX_OPEN_MS);
-        if (highStable || timeout) {
-            actuators.valve = false;
-            valveOpenSince = 0;
-            floatLowSince = 0;
-            Serial.printf("[RULE_ENGINE] 🚰 Valve AUTO CLOSED — %s\n", timeout ? "timeout" : "water full");
-        }
+    // Stable HIGH → valve OFF
+    if (actuators.valve && highStable) {
+        actuators.valve = false;
+        intentPrinted = false; // reset after applying action
+        floatLowSince = 0;
+        Serial.println("[RULE_ENGINE] ✅ Valve AUTO CLOSED — water level normal");
     }
 
-    // Apply hardware state change
-    if (actuators.valve != prevValve) {
+    // Apply relay control if changed
+    if (actuators.valve != prevValveState) {
         control_valve(actuators.valve);
-        prevValve = actuators.valve;
+        prevValveState = actuators.valve;
     }
 }
 
@@ -348,59 +361,55 @@ void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned lo
 void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis) {
     if (isnan(airTemp) || isnan(humidity)) return;
 
-    static bool prevFan = false;
+    static unsigned long lastChange = 0;
+    static bool lastFanState = false;
+    const unsigned long DEBOUNCE_MS = 5000; // prevent relay chatter
 
-    // Handle re-enabling of AUTO mode
+    // ----- AUTO RE-ENABLE HANDLER -----
     if (actuators.fanAutoJustEnabled) {
         actuators.fanAutoJustEnabled = false;
 
-        // Immediately determine correct state
-        const bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;       // e.g. 28°C
-        const bool tempLow  = airTemp < TEMP_OFF_THRESHOLD;       // e.g. 26.5°C
-        const bool humHigh  = humidity >= HUMIDITY_ON_THRESHOLD;  // e.g. 90%
+        bool shouldTurnOn =
+            (airTemp >= TEMP_ON_THRESHOLD) ||
+            (humidity >= HUMIDITY_ON_THRESHOLD);
 
-        bool newFanState = actuators.fan;
+        actuators.fan = shouldTurnOn;
+        control_fan(shouldTurnOn);
+        lastChange = nowMillis;
+        lastFanState = shouldTurnOn;
 
-        if (tempHigh || humHigh) {
-            newFanState = true;
-        } else if (tempLow) {
-            newFanState = false;
-        }
-
-        // Apply immediate correction
-        if (newFanState != actuators.fan) {
-            actuators.fan = newFanState;
-            control_fan(newFanState);
-            Serial.printf(
-                "[RULE_ENGINE] 🔁 Fan AUTO re-sync — now %s (T=%.1f°C, H=%.1f%%)\n",
-                newFanState ? "ON" : "OFF", airTemp, humidity
-            );
-        }
-
-        // Skip rest of logic this cycle
+        Serial.printf("[RULE_ENGINE] 🔁 Fan AUTO re-sync → %s (T=%.1f°C, H=%.1f%%)\n",
+                      shouldTurnOn ? "ON" : "OFF", airTemp, humidity);
         return;
     }
 
-    // 🧠 Normal AUTO control logic
-    const bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;
-    const bool tempLow  = airTemp < TEMP_OFF_THRESHOLD;
-    const bool humHigh  = humidity >= HUMIDITY_ON_THRESHOLD;
+    // ----- AUTO CONTROL RULES -----
+    bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;
+    bool tempLow  = airTemp <= TEMP_OFF_THRESHOLD;
 
-    if (tempHigh || humHigh) {
-        if (!actuators.fan) {
-            actuators.fan = true;
-            Serial.printf("[RULE_ENGINE] 🌀 Fan AUTO ON — T=%.1f°C, H=%.1f%%\n", airTemp, humidity);
-        }
-    } else if (tempLow) {
-        if (actuators.fan) {
-            actuators.fan = false;
-            Serial.println("[RULE_ENGINE] ✅ Fan AUTO OFF — normalized");
-        }
-    }
+    bool humHigh =
+        (airTemp >= 28.0 && humidity >= 85.0) ||
+        (airTemp >= 25.0 && humidity >= 90.0) ||
+        (airTemp <  25.0 && humidity >= 95.0);
 
-    if (actuators.fan != prevFan) {
-        control_fan(actuators.fan);
-        prevFan = actuators.fan;
+    bool humLow = humidity <= 80.0;
+
+    bool shouldTurnOn  = tempHigh || humHigh;
+    bool shouldTurnOff = tempLow  && humLow;
+
+    bool newFanState = actuators.fan;
+
+    // Only toggle if debounce period has passed
+    if ((shouldTurnOn && !actuators.fan && nowMillis - lastChange > DEBOUNCE_MS) ||
+        (shouldTurnOff && actuators.fan && nowMillis - lastChange > DEBOUNCE_MS)) {
+        newFanState = shouldTurnOn;
+        actuators.fan = newFanState;
+        control_fan(newFanState);
+        lastChange = nowMillis;
+        lastFanState = newFanState;
+
+        Serial.printf("[RULE_ENGINE] 🌀 Fan %s — T=%.1f°C, H=%.1f%%\n",
+                      newFanState ? "ON" : "OFF", airTemp, humidity);
     }
 }
 

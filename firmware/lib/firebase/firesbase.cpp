@@ -818,7 +818,6 @@ void onRTDBStream(AsyncResult &result) {
     }
 }
 
-// Initialize and start the Firebase RTDB stream
 // Initialize and start the Firebase RTDB stream (token-aware)
 void startFirebaseStream() {
     if (WiFi.status() != WL_CONNECTED) {

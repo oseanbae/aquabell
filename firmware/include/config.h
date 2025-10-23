@@ -51,7 +51,7 @@
 #define FAN_RELAY_PIN         19
 #define LIGHT_RELAY_PIN       18
 #define PUMP_RELAY_PIN        5
-#define VALVE_RELAY_PIN       16
+#define VALVE_RELAY_PIN       17
 
 // Fan Control Thresholds (with hysteresis)
 #define TEMP_ON_THRESHOLD     29.0f
@@ -76,7 +76,7 @@
 // === Float/Valve Safety =====
 // Debounce windows for float switch transitions
 #define FLOAT_LOW_DEBOUNCE_MS   3000UL   // require low for 3s
-#define FLOAT_HIGH_DEBOUNCE_MS  5000UL   // require high for 5s
+#define FLOAT_HIGH_DEBOUNCE_MS  3000UL   // require high for 3s
 
 // Maximum time to keep refill valve open before safety lock
 #define VALVE_MAX_OPEN_MS       (30UL * 60UL * 1000UL)  // 30 minutes
@@ -85,8 +85,8 @@
 
 //=== WIFI Configuration ===
 //JP'S HOME WIFI
-// #define WIFI_SSID   "meow"
-// #define WIFI_PASS   "helloworld2025"
+#define WIFI_SSID   "meow"
+#define WIFI_PASS   "helloworld2025"
 
 //Capstone wifi
 // #define WIFI_SSID           "Capstone"
@@ -103,5 +103,5 @@
 
 
 //GOMO WIFI
-#define WIFI_SSID           "OREOCHROMIS"
-#define WIFI_PASS           "AquaCapsicum"
+// #define WIFI_SSID           "OREOCHROMIS"
+// #define WIFI_PASS           "AquaCapsicum"
