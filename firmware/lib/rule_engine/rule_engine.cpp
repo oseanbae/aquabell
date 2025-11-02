@@ -358,58 +358,44 @@ void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned lo
     }
 }
 
-void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis) {
-    if (isnan(airTemp) || isnan(humidity)) return;
+void checkFanFallback(ActuatorState& actuators, float t, float h, unsigned long now) {
+    if (isnan(t) || isnan(h)) return;
 
-    static unsigned long lastChange = 0;
-    static bool lastFanState = false;
-    const unsigned long DEBOUNCE_MS = 5000; // prevent relay chatter
+    static unsigned long last = 0;
+    const unsigned long DEBOUNCE = 5000;
 
-    // ----- AUTO RE-ENABLE HANDLER -----
+    // Auto re-enable sync
     if (actuators.fanAutoJustEnabled) {
         actuators.fanAutoJustEnabled = false;
-
-        bool shouldTurnOn =
-            (airTemp >= TEMP_ON_THRESHOLD) ||
-            (humidity >= HUMIDITY_ON_THRESHOLD);
-
-        actuators.fan = shouldTurnOn;
-        control_fan(shouldTurnOn);
-        lastChange = nowMillis;
-        lastFanState = shouldTurnOn;
-
-        Serial.printf("[RULE_ENGINE] 🔁 Fan AUTO re-sync → %s (T=%.1f°C, H=%.1f%%)\n",
-                      shouldTurnOn ? "ON" : "OFF", airTemp, humidity);
+        actuators.fan = (t >= TEMP_ON_THRESHOLD);
+        control_fan(actuators.fan);
+        last = now;
+        Serial.printf("[RULE_ENGINE] Fan AUTO sync → %s (T=%.1f, H=%.1f)\n",
+                      actuators.fan ? "ON" : "OFF", t, h);
         return;
     }
 
-    // ----- AUTO CONTROL RULES -----
-    bool tempHigh = airTemp >= TEMP_ON_THRESHOLD;
-    bool tempLow  = airTemp <= TEMP_OFF_THRESHOLD;
+    if (!actuators.fanAuto) return;
 
-    bool humHigh =
-        (airTemp >= 28.0 && humidity >= 85.0) ||
-        (airTemp >= 25.0 && humidity >= 90.0) ||
-        (airTemp <  25.0 && humidity >= 95.0);
+    bool tooHot = t >= TEMP_ON_THRESHOLD;   // 29C
+    bool coolEnough = t <= TEMP_OFF_THRESHOLD; // 26C
+    bool tooHumid = h >= 90.0;              // simple humidity trigger
+    bool dryEnough = h <= 80.0;
 
-    bool humLow = humidity <= 80.0;
+    bool turnOn = tooHot || tooHumid;
+    bool turnOff = coolEnough && dryEnough;
 
-    bool shouldTurnOn  = tempHigh || humHigh;
-    bool shouldTurnOff = tempLow  && humLow;
-
-    bool newFanState = actuators.fan;
-
-    // Only toggle if debounce period has passed
-    if ((shouldTurnOn && !actuators.fan && nowMillis - lastChange > DEBOUNCE_MS) ||
-        (shouldTurnOff && actuators.fan && nowMillis - lastChange > DEBOUNCE_MS)) {
-        newFanState = shouldTurnOn;
-        actuators.fan = newFanState;
-        control_fan(newFanState);
-        lastChange = nowMillis;
-        lastFanState = newFanState;
-
-        Serial.printf("[RULE_ENGINE] 🌀 Fan %s — T=%.1f°C, H=%.1f%%\n",
-                      newFanState ? "ON" : "OFF", airTemp, humidity);
+    if (turnOn && !actuators.fan && now - last > DEBOUNCE) {
+        actuators.fan = true;
+        control_fan(true);
+        last = now;
+        Serial.printf("[RULE_ENGINE] Fan ON (T=%.1f, H=%.1f)\n", t, h);
+    }
+    else if (turnOff && actuators.fan && now - last > DEBOUNCE) {
+        actuators.fan = false;
+        control_fan(false);
+        last = now;
+        Serial.printf("[RULE_ENGINE] Fan OFF (T=%.1f, H=%.1f)\n", t, h);
     }
 }
 
