@@ -9,10 +9,10 @@
 
 // Forward declarations
 void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, const Commands& commands, unsigned long nowMillis);
-void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
-void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
-void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis);
-void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis);
+void checkValveLogic(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
+void checkPumpLogic(ActuatorState& actuators, unsigned long nowMillis);
+void checkFanLogic(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis);
+void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis);
 
 // === External globals ===
 extern RealTimeData current;
@@ -56,37 +56,12 @@ void evaluateRules(bool forceImmediate) {
 
 // --- MAIN ENTRY ---
 void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, const Commands& commands, unsigned long nowMillis) {
-    Serial.println("[RULE_ENGINE] Applying mode-aware rules: AUTO=ESP32 control, MANUAL=RTDB control");
+    Serial.println("[RULE_ENGINE] Applying mode-aware rules");
 
-    // ===== 1. EMERGENCY OVERRIDES =====
-    static bool prevEmergency = false;
-    actuators.emergencyMode = false;
-    actuators.lowWaterEmergency = data.floatTriggered;  // float switch active = low water
-
-    // --- Emergency Mode: only low water for now ---
-    if (actuators.lowWaterEmergency) {
-        actuators.emergencyMode = true;
-        Serial.println("[RULE_ENGINE] 🚨 EMERGENCY MODE ACTIVATED");
-        Serial.println("[RULE_ENGINE] 💧 Low water emergency - shutting off pump, opening valve");
-
-        // Disable critical actuators
-        actuators.pump = false;
-        actuators.valve = true; // open to refill if available
-
-        control_fan(actuators.fan);
-        control_light(actuators.light);
-        control_pump(actuators.pump);
-        control_valve(actuators.valve);
+    // If emergency active, skip normal rules (emergency already applied)
+    if (actuators.emergencyMode) {
+        Serial.println("[RULE_ENGINE] 🔒 Emergency active — skipping AUTO/MANUAL logic");
         return;
-    }
-
-    // Emergency cleared → reset valve if left ON
-    if (prevEmergency && !actuators.lowWaterEmergency) {
-        actuators.emergencyMode = false;
-        actuators.valve = false;
-        Serial.println("[RULE_ENGINE] ✅ Emergency cleared — valve closed");
-        control_valve(false);
-        prevEmergency = false;
     }
 
     // ===== 2. AUTO/MANUAL MODE PROCESSING =====
@@ -153,10 +128,10 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     }
 
     // ===== 3. AUTO CONTROL RULES =====
-    if (actuators.fanAuto)   checkFanFallback(actuators, data.airTemp, data.airHumidity, nowMillis);
-    if (actuators.lightAuto) checkLightFallback(actuators, nowMillis);
-    if (actuators.pumpAuto)  checkPumpFallback(actuators, data.floatTriggered, nowMillis);
-    if (actuators.valveAuto) checkValveFallback(actuators, data.floatTriggered, nowMillis);
+    if (actuators.fanAuto)   checkFanLogic(actuators, data.airTemp, data.airHumidity, nowMillis);
+    if (actuators.lightAuto) checkLightLogic(actuators, nowMillis);
+    if (actuators.pumpAuto)  checkPumpLogic(actuators, nowMillis);
+    if (actuators.valveAuto) checkValveLogic(actuators, data.floatTriggered, nowMillis);
 
     // ===== 4. APPLY FINAL STATES =====
     control_fan(actuators.fan);
@@ -231,7 +206,7 @@ void apply_rules(RealTimeData& current, const struct tm& now, const Commands& co
 }
 
 // ===== FALLBACK CONTROL FUNCTIONS =====
-void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis) {
+void checkValveLogic(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis) {
     static unsigned long floatLowSince  = 0;
     static unsigned long floatHighSince = 0;
     static bool intentPrinted = false;
@@ -262,8 +237,8 @@ void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned l
         }
     }
 
-    bool lowStable  = waterLevelLow  && (nowMillis - floatLowSince  >= FLOAT_LOW_DEBOUNCE_MS);
-    bool highStable = !waterLevelLow && (nowMillis - floatHighSince >= FLOAT_HIGH_DEBOUNCE_MS);
+    bool lowStable  = waterLevelLow  && (nowMillis - floatLowSince  >= FLOAT_LOW_DEBOUNCE_MS); //3000;
+    bool highStable = !waterLevelLow && (nowMillis - floatHighSince >= FLOAT_HIGH_DEBOUNCE_MS); //3000;
 
     // Stable LOW → valve ON
     if (lowStable && !actuators.valve) {
@@ -287,18 +262,16 @@ void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned l
     }
 }
 
-void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis) {
+void checkPumpLogic(ActuatorState& actuators, unsigned long nowMillis) {
     static unsigned long lastToggle = 0;
     static bool pumpWasOn = false;
     static bool firstRun = true;
 
     const unsigned long ON_DURATION  = PUMP_ON_DURATION  * 60 * 1000UL;
     const unsigned long OFF_DURATION = PUMP_OFF_DURATION * 60 * 1000UL;
-    //const unsigned long GRACE_PERIOD_MS = 5000; // 5 sec grace after AUTO re-enable
 
-    // Initialize baseline
     if (firstRun) {
-        lastToggle = nowMillis - OFF_DURATION; // start as if just completed an off cycle
+        lastToggle = nowMillis - OFF_DURATION;
         firstRun = false;
     }
 
@@ -322,7 +295,6 @@ void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned lo
             // cycle complete → toggle
             actuators.pump = !pumpWasOn;
             lastToggle = nowMillis;
-            Serial.println("[RULE_ENGINE] 💧 Pump AUTO re-enabled — cycle expired, toggling phase");
         }
 
         pumpWasOn = actuators.pump;
@@ -330,18 +302,17 @@ void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned lo
         return;
     }
 
-    // --- Normal rule logic below ---
-    if (waterLevelLow) {
+    // --- Pause pump if valve is open ---
+    if (actuators.valve) {
         if (actuators.pump) {
             actuators.pump = false;
-            lastToggle = nowMillis;
-            pumpWasOn = false;
-            Serial.println("[RULE_ENGINE] 💧 Pump OFF — float switch LOW");
+            Serial.println("[RULE_ENGINE] 💧 Pump OFF — valve open, refilling water");
             control_pump(false);
         }
-        return;
+        return; // skip normal schedule while refilling
     }
 
+    // --- Normal pump schedule ---
     unsigned long elapsed = nowMillis - lastToggle;
     if (pumpWasOn && elapsed >= ON_DURATION) {
         actuators.pump = false;
@@ -358,7 +329,7 @@ void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned lo
     }
 }
 
-void checkFanFallback(ActuatorState& actuators, float t, float h, unsigned long now) {
+void checkFanLogic(ActuatorState& actuators, float t, float h, unsigned long now) {
     if (isnan(t) || isnan(h)) return;
 
     static unsigned long last = 0;
@@ -399,7 +370,7 @@ void checkFanFallback(ActuatorState& actuators, float t, float h, unsigned long 
     }
 }
 
-void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis) {
+void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis) {
     static bool prevLight = false;
 
     if (actuators.lightAutoJustEnabled) actuators.lightAutoJustEnabled = false;

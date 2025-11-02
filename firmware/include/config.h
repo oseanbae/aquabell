@@ -36,8 +36,8 @@
 
 // === DO Sensor =============
 #define DO_SENSOR_PIN         34
-#define DO_CAL_TEMP           31.37    // °C from your calibration
-#define DO_CAL_VOLTAGE        453.14   // mV from your calibration
+#define DO_CAL_TEMP           31.37    // °C from your calibration 
+#define DO_CAL_VOLTAGE        453.14   // mV from your calibration 1135.0
 #define DO_SENSOR_SAMPLES     32
 
 // === Float Switch ==========
@@ -105,3 +105,9 @@
 //GOMO WIFI
 // #define WIFI_SSID           "OREOCHROMIS"
 // #define WIFI_PASS           "AquaCapsicum"
+
+// #define WIFI_SSID           "OPPO A54"
+// #define WIFI_PASS           "12345678"
+
+// #define WIFI_SSID           "PSU_HR"
+// #define WIFI_PASS           "PSUHR2K25"

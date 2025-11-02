@@ -27,9 +27,9 @@ void lcd_init() {
     lcd.backlight();
     // print static labels once
     lcd.setCursor(0, 0);
-    lcd.print(fixedWidth("Air:", 5) + fixedWidth("Hum:", 8)); // placeholders; we'll overwrite values
+    lcd.print(fixedWidth("Air: ", 5) + fixedWidth("Hum:", 8));
     lcd.setCursor(0, 1);
-    lcd.print(fixedWidth("Water:", 8) + fixedWidth("pH:", 6));
+    lcd.print(fixedWidth("Water: ", 8) + fixedWidth("pH:", 6));
     lcd.setCursor(0, 2);
     lcd.print(fixedWidth("DO:", 8));
     lcd.setCursor(0, 3);
@@ -38,32 +38,26 @@ void lcd_init() {
 
 // Write the dynamic values in-place (no lcd.clear())
 void lcd_display(const RealTimeData& data) {
-    // Row 0: "Air: xx.xC  Hum: yy.y%"
-    String airVal = "Air:" + String(data.airTemp, 1) + "C";
+    String airVal = "Air:" + String(data.airTemp) + "C";
     String humVal = "Hum:" + String(data.airHumidity) + "%";
-    // Compose fixed-width left and right halves or just pad them so they don't overlap incorrectly
-    // We'll reserve columns: Air block = cols 0..9 (10 chars), Hum block = cols 10..19 (10 chars)
     lcd.setCursor(0, 0);
     lcd.print(fixedWidth(airVal, 10));
     lcd.setCursor(10, 0);
     lcd.print(fixedWidth(humVal, 10));
 
-    // Row 1: "Water: xx.xC  pH: y.yy"
-    String waterVal = "Water: " + String(data.waterTemp, 1) + "C";
-    String pHVal = "pH: " + String(data.pH, 1);
-    // Reserve Water cols 0..11 (12 chars), pH cols 12..19 (8 chars)
+    String waterVal = "Water: " + String(data.waterTemp) + "C ";
+    String pHVal = "pH: " + String(data.pH);
+ 
     lcd.setCursor(0, 1);
     lcd.print(fixedWidth(waterVal, 12));
     lcd.setCursor(12, 1);
     lcd.print(fixedWidth(pHVal, 8));
 
-    // Row 2: "DO: x.x mg/L"
-    String doVal = "DO: " + String(data.dissolvedOxygen, 1) + "mg/L";
+    String doVal = "DO: " + String(data.dissolvedOxygen) + "mg/L";
     lcd.setCursor(0, 2);
-    lcd.print(fixedWidth(doVal, 20)); // fill the entire row (pads with spaces)
+    lcd.print(fixedWidth(doVal, 20));
 
-    // Row 3: "Turb: xx.x NTU"
-    String turbVal = "Turb: " + String(data.turbidityNTU, 1) + "NTU";
+    String turbVal = "Turb: " + String(data.turbidityNTU) + "NTU";
     lcd.setCursor(0, 3);
     lcd.print(fixedWidth(turbVal, 20));
 }

@@ -14,10 +14,10 @@ void applyRules(RealTimeData& data, ActuatorState& actuators, unsigned long nowM
 void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, const Commands& commands, unsigned long nowMillis);
 
 // Emergency fallback functions
-void checkValveFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
-void checkPumpFallback(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
-void checkFanFallback(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis);
-void checkLightFallback(ActuatorState& actuators, unsigned long nowMillis);
+void checkValveLogic(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
+void checkPumpLogic(ActuatorState& actuators, unsigned long nowMillis);
+void checkFanLogic(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis);
+void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis);
 
 // Legacy functions (kept for compatibility)
 void updateActuators(RealTimeData& current, Commands& commands, unsigned long nowMillis);
