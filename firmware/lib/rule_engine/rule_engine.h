@@ -18,6 +18,7 @@ void checkValveLogic(ActuatorState& actuators, bool waterLevelLow, unsigned long
 void checkPumpLogic(ActuatorState& actuators, unsigned long nowMillis);
 void checkFanLogic(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis);
 void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis);
+void checkWaterCoolerLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);
 
 // Legacy functions (kept for compatibility)
 void updateActuators(RealTimeData& current, Commands& commands, unsigned long nowMillis);

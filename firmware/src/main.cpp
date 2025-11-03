@@ -30,7 +30,8 @@ Commands currentCommands = {
     {true, false}, // fan
     {true, false}, // light
     {true, false}, // pump
-    {true, false}  // valve
+    {true, false},  // valve
+    {true, false}  // waterCooler
 };
 
 // === FLAGS & TIMERS ===
@@ -149,7 +150,7 @@ void loop() {
             if (wifiUp) {
                 applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
             } else {
-                Commands defaultAuto = { {true,false}, {true,false}, {true,false}, {true,false} };
+                Commands defaultAuto = { {true,false}, {true,false}, {true,false}, {true,false}, {true,false} };
                 applyRulesWithModeControl(current, actuators, defaultAuto, nowMillis);
             }
 
@@ -158,6 +159,7 @@ void loop() {
             current.relayStates.light     = actuators.light;
             current.relayStates.waterPump = actuators.pump;
             current.relayStates.valve     = actuators.valve;
+            current.relayStates.waterCooler = actuators.waterCooler;
 
             // === Sync to Firebase if ready ===
             if (wifiUp && fbReady && cmdsSynced) {

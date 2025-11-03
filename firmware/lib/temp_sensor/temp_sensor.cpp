@@ -6,10 +6,6 @@
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensor(&oneWire);
 
-// Temperature limits for tilapia
-const float TEMP_WARN_LOW  = 16.0f; // Warning threshold (min)
-const float TEMP_WARN_HIGH = 30.0f; // Warning threshold (max)
-
 // Initialize the water temperature sensor
 void temp_sensor_init() {
     sensor.begin();

@@ -6,6 +6,7 @@ struct ActuatorState {
   bool air = false;
   bool light = false;
   bool valve = false;
+  bool waterCooler = false;
 };
 
 extern ActuatorState actuators;

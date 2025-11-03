@@ -17,6 +17,7 @@ struct Commands {
     CommandState light;
     CommandState pump;
     CommandState valve;
+    CommandState waterCooler;
 };
 
 void pushToRTDBLive(const RealTimeData &data);
