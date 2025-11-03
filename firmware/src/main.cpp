@@ -15,12 +15,12 @@
 #include "time_utils.h"
 
 // === CONSTANTS ===
-#define USE_DHT_MOCK false
+#define USE_DHT_MOCK true
 #define USE_PH_MOCK true
 #define USE_DO_MOCK true
-#define USE_TURBIDITY_MOCK false
-#define USE_WATERTEMP_MOCK false
-#define USE_FLOATSWITCH_MOCK false
+#define USE_TURBIDITY_MOCK true
+#define USE_WATERTEMP_MOCK true
+#define USE_FLOATSWITCH_MOCK true
 
 // === GLOBAL STATES ===
 RealTimeData current = {};
@@ -30,8 +30,9 @@ Commands currentCommands = {
     {true, false}, // fan
     {true, false}, // light
     {true, false}, // pump
-    {true, false},  // valve
-    {true, false}  // waterCooler
+    {true, false}, // valve
+    {true, false}, // waterCooler
+    {true, false}  // waterHeater
 };
 
 // === FLAGS & TIMERS ===
@@ -144,13 +145,15 @@ void loop() {
             actuators.light = false;
             actuators.pump = false;
             actuators.valve = false;
+            actuators.waterCooler = false;
+            actuators.waterHeater = false;
             commandsChangedViaStream = false;
         } else {
             // === Automation & Manual Control ===
             if (wifiUp) {
                 applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
             } else {
-                Commands defaultAuto = { {true,false}, {true,false}, {true,false}, {true,false}, {true,false} };
+                Commands defaultAuto = { {true,false}, {true,false}, {true,false}, {true,false}, {true,false}, {true,false} };
                 applyRulesWithModeControl(current, actuators, defaultAuto, nowMillis);
             }
 
@@ -160,6 +163,7 @@ void loop() {
             current.relayStates.waterPump = actuators.pump;
             current.relayStates.valve     = actuators.valve;
             current.relayStates.waterCooler = actuators.waterCooler;
+            current.relayStates.waterHeater = actuators.waterHeater;
 
             // === Sync to Firebase if ready ===
             if (wifiUp && fbReady && cmdsSynced) {

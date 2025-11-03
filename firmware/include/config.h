@@ -11,8 +11,10 @@
 
 // === DS18B20 (Water Temp) ===
 #define ONE_WIRE_BUS             25
-#define WATERTEMP_ON_THRESHOLD   30.0f
-#define WATERTEMP_OFF_THRESHOLD  28.0f
+#define COOLER_ON_THRESHOLD   30.0f
+#define COOLER_OFF_THRESHOLD  28.0f
+#define HEATER_ON_THRESHOLD   22.0f
+#define HEATER_OFF_THRESHOLD  24.0f
 
 // === Turbidity =============
 #define TURBIDITY_PIN           35
@@ -55,6 +57,7 @@
 #define PUMP_RELAY_PIN         5
 #define VALVE_RELAY_PIN        17
 #define WATER_COOLER_RELAY_PIN 16
+#define WATER_HEATER_RELAY_PIN 4
 
 // Fan Control Thresholds (with hysteresis)
 #define TEMP_ON_THRESHOLD     29.0f

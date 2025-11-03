@@ -281,6 +281,7 @@ static bool extractSSEJson(const String &rawPayload, String &outJson) {
 
     return false;
 }
+
 // ===== FIREBASE RTDB & Firestore INTERACTIONS =====
 void pushToRTDBLive(const RealTimeData &data) {
     // Skip if not connected
@@ -466,8 +467,14 @@ bool fetchControlCommands() {
     extern Commands currentCommands;
 
     // Check each actuator individually
-    const char* actuators[] = {"fan", "light", "pump", "valve", "waterCooler"};
-    void (*controlFunctions[])(bool) = {control_fan, control_light, control_pump, control_valve, control_waterCooler};
+    const char* actuators[] = {"fan", "light", "pump", "valve", "waterCooler", "waterHeater"};
+    void (*controlFunctions[])(bool) = {
+                                        control_fan,
+                                        control_light,
+                                        control_pump, 
+                                        control_valve, 
+                                        control_waterCooler
+                                    };
 
     for (int i = 0; i < 5; i++) {
         const char* actuator = actuators[i];
@@ -497,6 +504,9 @@ bool fetchControlCommands() {
                 } else if (strcmp(actuator, "waterCooler") == 0) {
                     currentCommands.waterCooler.isAuto = isAuto;
                     currentCommands.waterCooler.value = value;
+                } else if (strcmp(actuator, "waterHeater") == 0) {
+                    currentCommands.waterHeater.isAuto = isAuto;
+                    currentCommands.waterHeater.value = value;
                 }
                 
                 if (!isAuto) { // Manual mode when isAuto is false
@@ -543,6 +553,7 @@ void syncRelayState(const RealTimeData &data, const Commands &commands) {
     if (commands.pump.isAuto)   doc["pump/value"] = data.relayStates.waterPump;
     if (commands.valve.isAuto)  doc["valve/value"] = data.relayStates.valve;
     if (commands.waterCooler.isAuto)  doc["waterCooler/value"] = data.relayStates.waterCooler;
+    if (commands.waterHeater.isAuto)  doc["waterHeater/value"] = data.relayStates.waterHeater;
     if (doc.size() == 0) return;  // Nothing to sync
 
     String payload;
@@ -666,6 +677,27 @@ void processPatchEvent(const String& dataPath, JsonDocument& patchData, Commands
             }
         }
     }
+    else if (dataPath == "/waterHeater") {
+        // Update waterHeater command
+        if (!patchData["isAuto"].isNull()) {
+            bool newIsAuto = patchData["isAuto"].as<bool>();
+            if (currentCommands.waterHeater.isAuto != newIsAuto) {
+                currentCommands.waterHeater.isAuto = newIsAuto;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] WaterHeater isAuto: %s\n", newIsAuto ? "true" : "false");
+            }
+        }
+        if (!patchData["value"].isNull()) {
+            bool newValue = patchData["value"].as<bool>();
+            if (currentCommands.waterHeater.value != newValue) {
+                currentCommands.waterHeater.value = newValue;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] WaterHeater value: %s\n", newValue ? "true" : "false");
+            }
+        }
+    }
+
+    
     else {
         Serial.printf("[RTDB Stream] Unknown path: %s\n", dataPath.c_str());
     }
@@ -744,6 +776,10 @@ void onRTDBStream(AsyncResult &result) {
             control_waterCooler(currentCommands.waterCooler.value);
             Serial.printf("[RTDB Stream] Manual WATER_COOLER applied: %s\n", currentCommands.waterCooler.value ? "ON" : "OFF");
         }
+        if (!currentCommands.waterHeater.isAuto) {
+            control_waterHeater(currentCommands.waterHeater.value);
+            Serial.printf("[RTDB Stream] Manual WATER_HEATER applied: %s\n", currentCommands.waterHeater.value ? "ON" : "OFF");
+        }
     };
 
     // PATCH or SNAPSHOT handling (same as your original)
@@ -764,6 +800,7 @@ void onRTDBStream(AsyncResult &result) {
                 else if (strcmp(name, "pump") == 0) oldAuto = currentCommands.pump.isAuto;
                 else if (strcmp(name, "valve") == 0) oldAuto = currentCommands.valve.isAuto;
                 else if (strcmp(name, "waterCooler") == 0) oldAuto = currentCommands.waterCooler.isAuto;
+                else if (strcmp(name, "waterHeater") == 0) oldAuto = currentCommands.waterHeater.isAuto;
 
                 // Apply patch changes
                 JsonDocument obj; 
@@ -789,7 +826,8 @@ void onRTDBStream(AsyncResult &result) {
         handleActuator("pump");
         handleActuator("valve");
         handleActuator("waterCooler");
-        
+        handleActuator("waterHeater");
+
         applyManualIfNeeded();
     } else {
         // Snapshot handling
@@ -812,6 +850,10 @@ void onRTDBStream(AsyncResult &result) {
         if (!doc["waterCooler"].isNull()) {
             JsonDocument obj; obj.set(doc["waterCooler"]);
             processPatchEvent("/waterCooler", obj, currentCommands, hasChanges);
+        }
+        if (!doc["waterHeater"].isNull()) {
+            JsonDocument obj; obj.set(doc["waterHeater"]);
+            processPatchEvent("/waterHeater", obj, currentCommands, hasChanges);
         }
         applyManualIfNeeded();
     }
@@ -844,6 +886,7 @@ void onRTDBStream(AsyncResult &result) {
         snapshot.relayStates.waterPump = actuators.pump;
         snapshot.relayStates.valve     = actuators.valve;
         snapshot.relayStates.waterCooler= actuators.waterCooler;
+        snapshot.relayStates.waterHeater= actuators.waterHeater;
 
         syncRelayState(snapshot, currentCommands);
         Serial.println("[RTDB Stream] Immediate sync completed.");
