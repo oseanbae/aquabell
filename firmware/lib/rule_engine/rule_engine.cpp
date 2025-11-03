@@ -178,35 +178,6 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     prevWaterCoolerAuto = commands.waterCooler.isAuto;
 }
 
-// Legacy function for backward compatibility (simplified)
-void applyRules(RealTimeData& data, ActuatorState& actuators, unsigned long nowMillis) {
-    // Create default commands (all AUTO mode)
-    Commands defaultCommands = {
-        {true, false}, // fan
-        {true, false}, // light
-        {true, false}, // pump
-        {true, false},  // valve
-        {true, false}  // waterCooler
-    };
-    
-    // Use the new mode-aware function
-    applyRulesWithModeControl(data, actuators, defaultCommands, nowMillis);
-}
-
-// ===== LEGACY FUNCTIONS (for backward compatibility) =====
-void updateActuators(RealTimeData& current, Commands& commands, unsigned long nowMillis) {
-    // Create ActuatorState from current data
-    ActuatorState actuators = {};
-    actuators.fan = current.relayStates.fan;
-    actuators.light = current.relayStates.light;
-    actuators.pump = current.relayStates.waterPump;
-    actuators.valve = current.relayStates.valve;
-    actuators.waterCooler = current.relayStates.waterCooler;
-    
-    // Use the new mode-aware function
-    applyRulesWithModeControl(current, actuators, commands, nowMillis);
-}
-
 void apply_rules(RealTimeData& current, const struct tm& now, const Commands& commands) {
     // Create ActuatorState from current data
     ActuatorState actuators = {};
@@ -439,7 +410,7 @@ void checkWaterCoolerLogic(ActuatorState &actuators, float waterTemp, unsigned l
         control_waterCooler(actuators.waterCooler);
         last = nowMillis;
 
-        Serial.printf("[RULE_ENGINE] 💨 WaterCooler AUTO re-enabled → %s (waterTemp=%.2f°C)\n",
+        Serial.printf("[RULE_ENGINE] 💨 Fan AUTO re-enabled → %s (waterTemp=%.2f°C)\n",
                       actuators.waterCooler ? "ON" : "OFF", waterTemp);
         return;
     }
@@ -448,15 +419,15 @@ void checkWaterCoolerLogic(ActuatorState &actuators, float waterTemp, unsigned l
     bool coolEnough = (waterTemp <= WATERTEMP_OFF_THRESHOLD);
 
     if (tooHot && !actuators.waterCooler && (nowMillis - last) > DEBOUNCE_MS) {
-        actuators.waterCooler = true;
+        actuators.fan = true;
         control_waterCooler(true);
         last = nowMillis;
-        Serial.printf("[RULE_ENGINE] 💨 WaterCooler ON — water warm (%.2f°C)\n", waterTemp);
+        Serial.printf("[RULE_ENGINE] 💨 Fan ON — water warm (%.2f°C)\n", waterTemp);
     }
     else if (coolEnough && actuators.waterCooler && (nowMillis - last) > DEBOUNCE_MS) {
-        actuators.waterCooler = false;
+        actuators.fan = false;
         control_waterCooler(false);
         last = nowMillis;
-        Serial.printf("[RULE_ENGINE] 💨 WaterCooler OFF — water cooled (%.2f°C)\n", waterTemp);
+        Serial.printf("[RULE_ENGINE] 💨 Fan OFF — water cooled (%.2f°C)\n", waterTemp);
     }
 }

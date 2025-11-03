@@ -59,7 +59,6 @@
 // Fan Control Thresholds (with hysteresis)
 #define TEMP_ON_THRESHOLD     29.0f
 #define TEMP_OFF_THRESHOLD    26.5f
-#define HUMIDITY_ON_THRESHOLD 90.0f
 
 // === Pump Control =========
 #define PUMP_ON_DURATION       15U   // minutes
@@ -81,8 +80,6 @@
 #define FLOAT_LOW_DEBOUNCE_MS   3000UL   // require low for 3s
 #define FLOAT_HIGH_DEBOUNCE_MS  3000UL   // require high for 3s
 
-// Maximum time to keep refill valve open before safety lock
-#define VALVE_MAX_OPEN_MS       (30UL * 60UL * 1000UL)  // 30 minutes
 
 #define RELAY_SYNC_COOLDOWN 2000UL
 

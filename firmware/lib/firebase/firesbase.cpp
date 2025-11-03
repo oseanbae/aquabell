@@ -952,7 +952,7 @@ void handleFirebaseStream() {
     }
 }
 
-
+//NOTE: isStreamConnected is not used, safe to delete
 // Check if the Firebase stream is currently connected
 bool isStreamConnected() {
     return streamConnected;
