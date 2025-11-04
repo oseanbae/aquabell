@@ -63,15 +63,15 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     static bool prevLightAuto = true;
     static bool prevPumpAuto  = true;
     static bool prevValveAuto = true;
-    static bool prevWaterCoolerAuto = true;
-    static bool prevWaterHeaterAuto = true;
+    static bool prevCoolerAuto = true;
+    static bool prevHeaterAuto = true;
 
     bool fanAutoTransition   = commands.fan.isAuto   && !prevFanAuto;
     bool lightAutoTransition = commands.light.isAuto && !prevLightAuto;
     bool pumpAutoTransition  = commands.pump.isAuto  && !prevPumpAuto;
     bool valveAutoTransition = commands.valve.isAuto && !prevValveAuto;
-    bool waterCoolerAutoTransition = commands.waterCooler.isAuto && !prevWaterCoolerAuto;
-    bool waterHeaterAutoTransition = commands.waterHeater.isAuto && !prevWaterHeaterAuto;
+    bool coolerAutoTransition = commands.cooler.isAuto && !prevCoolerAuto;
+    bool heaterAutoTransition = commands.heater.isAuto && !prevHeaterAuto;
 
     // --- FAN ---
     if (!commands.fan.isAuto) {
@@ -126,27 +126,27 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     }
 
     // --- WATER COOLER ---
-    if (!commands.waterCooler.isAuto) {
-        actuators.waterCoolerAuto = false;
-        actuators.waterCooler = commands.waterCooler.value;
-        Serial.printf("[RULE_ENGINE] 💨 Water Cooler MANUAL from RTDB: %s\n", actuators.waterCooler ? "ON" : "OFF");
+    if (!commands.cooler.isAuto) {
+        actuators.coolerAuto = false;
+        actuators.cooler = commands.cooler.value;
+        Serial.printf("[RULE_ENGINE] 💨 Water Cooler MANUAL from RTDB: %s\n", actuators.cooler ? "ON" : "OFF");
     } else {
-        actuators.waterCoolerAuto = true;
-        if (waterCoolerAutoTransition) {
-            actuators.waterCoolerAutoJustEnabled = true;
+        actuators.coolerAuto = true;
+        if (coolerAutoTransition) {
+            actuators.coolerAutoJustEnabled = true;
             Serial.println("[RULE_ENGINE] 💨 Water Cooler AUTO re-enabled — evaluating now");
         }
     }
 
     // --- WATER HEATER ---
-    if (!commands.waterHeater.isAuto) {
-        actuators.waterHeaterAuto = false;
-        actuators.waterHeater = commands.waterHeater.value;
-        Serial.printf("[RULE_ENGINE] 🔥 Water Heater MANUAL from RTDB: %s\n", actuators.waterHeater ? "ON" : "OFF");
+    if (!commands.heater.isAuto) {
+        actuators.heaterAuto = false;
+        actuators.heater = commands.heater.value;
+        Serial.printf("[RULE_ENGINE] 🔥 Water Heater MANUAL from RTDB: %s\n", actuators.heater ? "ON" : "OFF");
     } else {
-        actuators.waterHeaterAuto = true;
-        if (waterHeaterAutoTransition) {
-            actuators.waterHeaterAutoJustEnabled = true;
+        actuators.heaterAuto = true;
+        if (heaterAutoTransition) {
+            actuators.heaterAutoJustEnabled = true;
             Serial.println("[RULE_ENGINE] 🔥 Water Heater AUTO re-enabled — evaluating now");
         }
     }
@@ -156,16 +156,16 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     if (actuators.lightAuto) checkLightLogic(actuators, nowMillis);
     if (actuators.pumpAuto)  checkPumpLogic(actuators, nowMillis);
     if (actuators.valveAuto) checkValveLogic(actuators, data.floatTriggered, nowMillis);
-    if (actuators.waterCoolerAuto) checkWaterCoolerLogic(actuators, data.waterTemp, nowMillis);
-    if (actuators.waterHeaterAuto) checkWaterHeaterLogic(actuators, data.waterTemp, nowMillis);
+    if (actuators.coolerAuto) checkCoolerLogic(actuators, data.waterTemp, nowMillis);
+    if (actuators.heaterAuto) checkHeaterLogic(actuators, data.waterTemp, nowMillis);
 
     // ===== 4. APPLY FINAL STATES =====
     control_fan(actuators.fan);
     control_light(actuators.light);
     control_pump(actuators.pump);
     control_valve(actuators.valve);
-    control_waterCooler(actuators.waterCooler);
-    control_waterHeater(actuators.waterHeater);
+    control_cooler(actuators.cooler);
+    control_heater(actuators.heater);
 
     // reflect to global current so syncRelayState uses the actual actuators state
     extern RealTimeData current;
@@ -173,32 +173,32 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     current.relayStates.light     = actuators.light;
     current.relayStates.waterPump = actuators.pump;
     current.relayStates.valve     = actuators.valve;
-    current.relayStates.waterCooler = actuators.waterCooler;
-    current.relayStates.waterHeater = actuators.waterHeater;
+    current.relayStates.cooler = actuators.cooler;
+    current.relayStates.heater = actuators.heater;
 
-    Serial.printf("[RULE_ENGINE] Final states - Fan:%s(%s) Light:%s(%s) Pump:%s(%s) Valve:%s(%s) WaterCooler:%s(%s)\n WaterHeater:%s(%s)\n",
+    Serial.printf("[RULE_ENGINE] Final states - Fan:%s(%s) Light:%s(%s) Pump:%s(%s) Valve:%s(%s) Cooler:%s(%s)\n Heater:%s(%s)\n",
                   actuators.fan ? "ON" : "OFF", actuators.fanAuto ? "AUTO" : "MANUAL",
                   actuators.light ? "ON" : "OFF", actuators.lightAuto ? "AUTO" : "MANUAL",
                   actuators.pump ? "ON" : "OFF", actuators.pumpAuto ? "AUTO" : "MANUAL",
                   actuators.valve ? "ON" : "OFF", actuators.valveAuto ? "AUTO" : "MANUAL",
-                  actuators.waterCooler ? "ON" : "OFF", actuators.waterCoolerAuto ? "AUTO" : "MANUAL",
-                  actuators.waterHeater ? "ON" : "OFF", actuators.waterHeaterAuto ? "AUTO" : "MANUAL");
+                  actuators.cooler ? "ON" : "OFF", actuators.coolerAuto ? "AUTO" : "MANUAL",
+                  actuators.heater ? "ON" : "OFF", actuators.heaterAuto ? "AUTO" : "MANUAL");
 
     // // Reset re-enable flags after evaluation
     // actuators.fanAutoJustEnabled   = false;
     // actuators.lightAutoJustEnabled = false;
     // actuators.pumpAutoJustEnabled  = false;
     // actuators.valveAutoJustEnabled = false;
-    // actuators.waterCoolerAutoJustEnabled = false;
-    // actuators.waterHeaterAutoJustEnabled = false;
+    // actuators.coolerAutoJustEnabled = false;
+    // actuators.heaterAutoJustEnabled = false;
 
     // Update previous state trackers
     prevFanAuto   = commands.fan.isAuto;
     prevLightAuto = commands.light.isAuto;
     prevPumpAuto  = commands.pump.isAuto;
     prevValveAuto = commands.valve.isAuto;
-    prevWaterCoolerAuto = commands.waterCooler.isAuto;
-    prevWaterHeaterAuto = commands.waterHeater.isAuto;
+    prevCoolerAuto = commands.cooler.isAuto;
+    prevHeaterAuto = commands.heater.isAuto;
 }
 
 // ===== FALLBACK CONTROL FUNCTIONS =====
@@ -398,88 +398,88 @@ void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis) {
     }
 }
 
-void checkWaterCoolerLogic(ActuatorState &actuators, float waterTemp, unsigned long nowMillis)
+void checkCoolerLogic(ActuatorState &actuators, float waterTemp, unsigned long nowMillis)
 {
     if (isnan(waterTemp)) return;
-    if (!actuators.waterCoolerAuto) return;
+    if (!actuators.coolerAuto) return;
 
     static unsigned long last = 0;
     const unsigned long DEBOUNCE_MS = 5000;
 
 
     // Handle AUTO re-enable
-    if (actuators.waterCoolerAutoJustEnabled) {
-        actuators.waterCoolerAutoJustEnabled = false;
+    if (actuators.coolerAutoJustEnabled) {
+        actuators.coolerAutoJustEnabled = false;
 
         if (waterTemp >= COOLER_ON_THRESHOLD) {
-            actuators.waterCooler = true;
+            actuators.cooler = true;
         } else if (waterTemp <= COOLER_OFF_THRESHOLD) {
-            actuators.waterCooler = false;
+            actuators.cooler = false;
         }
 
-        control_waterCooler(actuators.waterCooler);
+        control_cooler(actuators.cooler);
         last = nowMillis;
 
         Serial.printf("[RULE_ENGINE] 💨 Fan AUTO re-enabled → %s (waterTemp=%.2f°C)\n",
-                      actuators.waterCooler ? "ON" : "OFF", waterTemp);
+                      actuators.cooler ? "ON" : "OFF", waterTemp);
         return;
     }
 
     bool tooHot     = (waterTemp >= COOLER_ON_THRESHOLD);
     bool coolEnough = (waterTemp <= COOLER_OFF_THRESHOLD);
 
-    if (tooHot && !actuators.waterCooler && (nowMillis - last) > DEBOUNCE_MS) {
-        actuators.waterCooler = true;
-        control_waterCooler(true);
+    if (tooHot && !actuators.cooler && (nowMillis - last) > DEBOUNCE_MS) {
+        actuators.cooler = true;
+        control_cooler(true);
         last = nowMillis;
         Serial.printf("[RULE_ENGINE] 💨 Fan ON — water warm (%.2f°C)\n", waterTemp);
     }
-    else if (coolEnough && actuators.waterCooler && (nowMillis - last) > DEBOUNCE_MS) {
-        actuators.waterCooler = false;
-        control_waterCooler(false);
+    else if (coolEnough && actuators.cooler && (nowMillis - last) > DEBOUNCE_MS) {
+        actuators.cooler = false;
+        control_cooler(false);
         last = nowMillis;
         Serial.printf("[RULE_ENGINE] 💨 Fan OFF — water cooled (%.2f°C)\n", waterTemp);
     }
 }
 
-void checkWaterHeaterLogic(ActuatorState &actuators, float waterTemp, unsigned long nowMillis)
+void checkHeaterLogic(ActuatorState &actuators, float waterTemp, unsigned long nowMillis)
 {
     if (isnan(waterTemp)) return;
-    if (!actuators.waterHeaterAuto) return;
+    if (!actuators.heaterAuto) return;
 
     static unsigned long last = 0;
     const unsigned long DEBOUNCE_MS = 5000;
 
     // Handle AUTO re-enable
-    if (actuators.waterHeaterAutoJustEnabled) {
-        actuators.waterHeaterAutoJustEnabled = false;
+    if (actuators.heaterAutoJustEnabled) {
+        actuators.heaterAutoJustEnabled = false;
 
         if (waterTemp <= HEATER_ON_THRESHOLD) { 
-            actuators.waterHeater = true;
+            actuators.heater = true;
         } else if (waterTemp >= HEATER_OFF_THRESHOLD) {
-            actuators.waterHeater = false;
+            actuators.heater = false;
         }
 
-        control_waterHeater(actuators.waterHeater);
+        control_heater(actuators.heater);
         last = nowMillis;
 
         Serial.printf("[RULE_ENGINE] 🔥 Heater AUTO re-enabled → %s (waterTemp=%.2f°C)\n",
-                      actuators.waterHeater ? "ON" : "OFF", waterTemp);
+                      actuators.heater ? "ON" : "OFF", waterTemp);
         return;
     }
 
     bool tooCold  = (waterTemp <= HEATER_ON_THRESHOLD);
     bool warmEnough = (waterTemp >= HEATER_OFF_THRESHOLD);
 
-    if (tooCold && !actuators.waterHeater && (nowMillis - last) > DEBOUNCE_MS) {
-        actuators.waterHeater = true;
-        control_waterHeater(true);
+    if (tooCold && !actuators.heater && (nowMillis - last) > DEBOUNCE_MS) {
+        actuators.heater = true;
+        control_heater(true);
         last = nowMillis;
         Serial.printf("[RULE_ENGINE] 🔥 Heater ON — water cold (%.2f°C)\n", waterTemp);
     }
-    else if (warmEnough && actuators.waterHeater && (nowMillis - last) > DEBOUNCE_MS) {
-        actuators.waterHeater = false;
-        control_waterHeater(false);
+    else if (warmEnough && actuators.heater && (nowMillis - last) > DEBOUNCE_MS) {
+        actuators.heater = false;
+        control_heater(false);
         last = nowMillis;
         Serial.printf("[RULE_ENGINE] 🔥 Heater OFF — water warmed (%.2f°C)\n", waterTemp);
     }

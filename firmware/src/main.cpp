@@ -31,8 +31,8 @@ Commands currentCommands = {
     {true, false}, // light
     {true, false}, // pump
     {true, false}, // valve
-    {true, false}, // waterCooler
-    {true, false}  // waterHeater
+    {true, false}, // cooler
+    {true, false}  // heater
 };
 
 // === FLAGS & TIMERS ===
@@ -145,8 +145,8 @@ void loop() {
             actuators.light = false;
             actuators.pump = false;
             actuators.valve = false;
-            actuators.waterCooler = false;
-            actuators.waterHeater = false;
+            actuators.cooler = false;
+            actuators.heater = false;
             commandsChangedViaStream = false;
         } else {
             // === Automation & Manual Control ===
@@ -162,8 +162,8 @@ void loop() {
             current.relayStates.light     = actuators.light;
             current.relayStates.waterPump = actuators.pump;
             current.relayStates.valve     = actuators.valve;
-            current.relayStates.waterCooler = actuators.waterCooler;
-            current.relayStates.waterHeater = actuators.waterHeater;
+            current.relayStates.cooler = actuators.cooler;
+            current.relayStates.heater = actuators.heater;
 
             // === Sync to Firebase if ready ===
             if (wifiUp && fbReady && cmdsSynced) {

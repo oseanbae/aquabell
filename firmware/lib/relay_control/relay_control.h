@@ -6,5 +6,5 @@ void control_fan(bool state);
 void control_light(bool state);
 void control_pump(bool state);
 void control_valve(bool state);
-void control_waterCooler(bool state);
-void control_waterHeater(bool state);
+void control_cooler(bool state);
+void control_heater(bool state);

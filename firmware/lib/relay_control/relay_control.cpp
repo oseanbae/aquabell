@@ -26,8 +26,8 @@ void relay_control_init() {
         else if (RELAYS[i] == LIGHT_RELAY_PIN) actuators.light = false;
         else if (RELAYS[i] == PUMP_RELAY_PIN) actuators.pump = false;
         else if (RELAYS[i] == VALVE_RELAY_PIN) actuators.valve = false;
-        else if (RELAYS[i] == WATER_COOLER_RELAY_PIN) actuators.waterCooler = false;
-        else if (RELAYS[i] == WATER_HEATER_RELAY_PIN) actuators.waterHeater = false;
+        else if (RELAYS[i] == WATER_COOLER_RELAY_PIN) actuators.cooler = false;
+        else if (RELAYS[i] == WATER_HEATER_RELAY_PIN) actuators.heater = false;
     }
 
     Serial.println("✅ Relay control initialized. All relays OFF.");
@@ -43,8 +43,8 @@ void setRelay(int relayPin, bool state) {
     else if (relayPin == PUMP_RELAY_PIN) actuators.pump = state;
     else if (relayPin == LIGHT_RELAY_PIN) actuators.light = state;
     else if (relayPin == VALVE_RELAY_PIN) actuators.valve = state;
-    else if (relayPin == WATER_COOLER_RELAY_PIN) actuators.waterCooler = state;
-    else if (relayPin == WATER_HEATER_RELAY_PIN) actuators.waterHeater = state;
+    else if (relayPin == WATER_COOLER_RELAY_PIN) actuators.cooler = state;
+    else if (relayPin == WATER_HEATER_RELAY_PIN) actuators.heater = state;
 }
 
 // === Component-specific wrappers ===
@@ -52,5 +52,5 @@ void control_fan(bool state)   { setRelay(FAN_RELAY_PIN, state); }
 void control_light(bool state) { setRelay(LIGHT_RELAY_PIN, state); }
 void control_pump(bool state)  { setRelay(PUMP_RELAY_PIN, state); }
 void control_valve(bool state) { setRelay(VALVE_RELAY_PIN, state); }
-void control_waterCooler(bool state) { setRelay(WATER_COOLER_RELAY_PIN, state); }
-void control_waterHeater(bool state) { setRelay(WATER_HEATER_RELAY_PIN, state); }
+void control_cooler(bool state) { setRelay(WATER_COOLER_RELAY_PIN, state); }
+void control_heater(bool state) { setRelay(WATER_HEATER_RELAY_PIN, state); }

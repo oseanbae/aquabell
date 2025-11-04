@@ -15,8 +15,8 @@ void checkValveLogic(ActuatorState& actuators, bool waterLevelLow, unsigned long
 void checkPumpLogic(ActuatorState& actuators, unsigned long nowMillis);
 void checkFanLogic(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis);
 void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis);
-void checkWaterCoolerLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);
-void checkWaterHeaterLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);
+void checkCoolerLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);
+void checkHeaterLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);
 
 // Main rule evaluation entry point
 void evaluateRules(bool forceImmediate = false);

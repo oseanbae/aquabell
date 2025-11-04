@@ -11,16 +11,16 @@ struct ActuatorState {
     bool light = false;
     bool pump = false;
     bool valve = false;
-    bool waterCooler = false;
-    bool waterHeater = false;
+    bool cooler = false;
+    bool heater = false;
 
     // Control modes
     bool fanAuto = true;
     bool lightAuto = true;
     bool pumpAuto = true;
     bool valveAuto = true;
-    bool waterCoolerAuto = true;
-    bool waterHeaterAuto = true;
+    bool coolerAuto = true;
+    bool heaterAuto = true;
 
     // Emergency overrides
     bool emergencyMode = false;
@@ -31,23 +31,23 @@ struct ActuatorState {
     bool lightManual = false;
     bool pumpManual = false;
     bool valveManual = false;
-    bool waterCoolerManual = false;
-    bool waterHeaterManual = false;
+    bool coolerManual = false;
+    bool heaterManual = false;
 
     // Manual values (when manual mode is active)
     bool fanManualValue = false;
     bool lightManualValue = false;
     bool pumpManualValue = false;
     bool valveManualValue = false;
-    bool waterCoolerManualValue = false;
-    bool waterHeaterManualValue = false;
+    bool coolerManualValue = false;
+    bool heaterManualValue = false;
 
     bool fanAutoJustEnabled = false;
     bool lightAutoJustEnabled = false;
     bool pumpAutoJustEnabled = false;
     bool valveAutoJustEnabled = false;
-    bool waterCoolerAutoJustEnabled = false;
-    bool waterHeaterAutoJustEnabled = false;
+    bool coolerAutoJustEnabled = false;
+    bool heaterAutoJustEnabled = false;
 };
 
 struct RealTimeData {
@@ -64,8 +64,8 @@ struct RealTimeData {
         bool light;
         bool waterPump;
         bool valve;
-        bool waterCooler;
-        bool waterHeater;
+        bool cooler;
+        bool heater;
     } relayStates;
 };  
 
