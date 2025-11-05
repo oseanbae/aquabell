@@ -344,10 +344,10 @@ void checkFanLogic(ActuatorState& actuators, float t, float h, unsigned long now
 
     if (!actuators.fanAuto) return;
 
-    bool tooHot = t >= TEMP_ON_THRESHOLD;   // 29C
-    bool coolEnough = t <= TEMP_OFF_THRESHOLD; // 26C
-    bool tooHumid = h >= 90.0;              // simple humidity trigger
-    bool dryEnough = h <= 80.0;
+    bool tooHot = t >= TEMP_ON_THRESHOLD;          // 29C
+    bool coolEnough = t <= TEMP_OFF_THRESHOLD;     // 26C
+    bool tooHumid = h >= HUMIDITY_MAX_THRESHOLD;   // 90%
+    bool dryEnough = h <= HUMIDITY_MIN_THRESHOLD;  // 80%
 
     bool turnOn = tooHot || tooHumid;
     bool turnOff = coolEnough && dryEnough;
@@ -411,9 +411,9 @@ void checkCoolerLogic(ActuatorState &actuators, float waterTemp, unsigned long n
     if (actuators.coolerAutoJustEnabled) {
         actuators.coolerAutoJustEnabled = false;
 
-        if (waterTemp >= COOLER_ON_THRESHOLD) {
+        if (waterTemp >= COOLER_ON_TEMP) {
             actuators.cooler = true;
-        } else if (waterTemp <= COOLER_OFF_THRESHOLD) {
+        } else if (waterTemp <= COOLER_OFF_TEMP) {
             actuators.cooler = false;
         }
 
@@ -425,8 +425,8 @@ void checkCoolerLogic(ActuatorState &actuators, float waterTemp, unsigned long n
         return;
     }
 
-    bool tooHot     = (waterTemp >= COOLER_ON_THRESHOLD);
-    bool coolEnough = (waterTemp <= COOLER_OFF_THRESHOLD);
+    bool tooHot     = (waterTemp >= COOLER_ON_TEMP);
+    bool coolEnough = (waterTemp <= COOLER_OFF_TEMP);
 
     if (tooHot && !actuators.cooler && (nowMillis - last) > DEBOUNCE_MS) {
         actuators.cooler = true;
@@ -454,9 +454,9 @@ void checkHeaterLogic(ActuatorState &actuators, float waterTemp, unsigned long n
     if (actuators.heaterAutoJustEnabled) {
         actuators.heaterAutoJustEnabled = false;
 
-        if (waterTemp <= HEATER_ON_THRESHOLD) { 
+        if (waterTemp <= HEATER_ON_TEMP) { 
             actuators.heater = true;
-        } else if (waterTemp >= HEATER_OFF_THRESHOLD) {
+        } else if (waterTemp >= HEATER_OFF_TEMP) {
             actuators.heater = false;
         }
 
@@ -468,8 +468,8 @@ void checkHeaterLogic(ActuatorState &actuators, float waterTemp, unsigned long n
         return;
     }
 
-    bool tooCold  = (waterTemp <= HEATER_ON_THRESHOLD);
-    bool warmEnough = (waterTemp >= HEATER_OFF_THRESHOLD);
+    bool tooCold  = (waterTemp <= HEATER_ON_TEMP);
+    bool warmEnough = (waterTemp >= HEATER_OFF_TEMP);
 
     if (tooCold && !actuators.heater && (nowMillis - last) > DEBOUNCE_MS) {
         actuators.heater = true;
