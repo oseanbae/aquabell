@@ -11,7 +11,9 @@ const int RELAYS[] = {
     PUMP_RELAY_PIN,
     VALVE_RELAY_PIN,
     WATER_COOLER_RELAY_PIN,
-    WATER_HEATER_RELAY_PIN
+    WATER_HEATER_RELAY_PIN,
+    PH_LOWERING_RELAY_PIN,
+    PH_RAISING_RELAY_PIN
 };
 
 // === Init all relays ===
@@ -45,6 +47,8 @@ void setRelay(int relayPin, bool state) {
     else if (relayPin == VALVE_RELAY_PIN) actuators.valve = state;
     else if (relayPin == WATER_COOLER_RELAY_PIN) actuators.cooler = state;
     else if (relayPin == WATER_HEATER_RELAY_PIN) actuators.heater = state;
+    else if (relayPin == PH_LOWERING_RELAY_PIN) actuators.phLowering = state;
+    else if (relayPin == PH_RAISING_RELAY_PIN) actuators.phRaising = state;
 }
 
 // === Component-specific wrappers ===
@@ -54,3 +58,7 @@ void control_pump(bool state)  { setRelay(PUMP_RELAY_PIN, state); }
 void control_valve(bool state) { setRelay(VALVE_RELAY_PIN, state); }
 void control_cooler(bool state) { setRelay(WATER_COOLER_RELAY_PIN, state); }
 void control_heater(bool state) { setRelay(WATER_HEATER_RELAY_PIN, state); }
+void control_ph_pump(bool up, bool down) {
+    setRelay(PH_LOWERING_RELAY_PIN, down);
+    setRelay(PH_RAISING_RELAY_PIN, up);
+}

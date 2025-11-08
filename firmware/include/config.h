@@ -20,6 +20,13 @@
 #define HEATER_ON_TEMP   22.0f
 #define HEATER_OFF_TEMP  23.5f
 
+// === pH Control ===
+#define PH_LOW_THRESHOLD     6.7f   // pH below this triggers pH UP pump
+#define PH_HIGH_THRESHOLD    7.3f   // pH above this triggers pH DOWN pump
+#define PH_PUMP_RUN_MS       2000UL  // Duration of pH dose (2 seconds)
+#define PH_MIN_CHECK_INTERVAL_MS 60000UL  // Minimum interval between pH checks (1 minute)
+#define PH_REST_PERIOD_MS    300000UL // Rest period after dose before next check (5 minutes)
+
 // === Turbidity =============
 #define TURBIDITY_PIN           35
 #define NUM_SAMPLES             10
@@ -62,6 +69,8 @@
 #define VALVE_RELAY_PIN        17
 #define WATER_COOLER_RELAY_PIN 16
 #define WATER_HEATER_RELAY_PIN 4
+#define PH_LOWERING_RELAY_PIN  2
+#define PH_RAISING_RELAY_PIN   15
 
 // === Pump Control =========
 #define PUMP_ON_DURATION       15U   // minutes

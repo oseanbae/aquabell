@@ -13,6 +13,8 @@ struct ActuatorState {
     bool valve = false;
     bool cooler = false;
     bool heater = false;
+    bool phLowering = false;
+    bool phRaising = false;
 
     // Control modes
     bool fanAuto = true;
@@ -21,6 +23,8 @@ struct ActuatorState {
     bool valveAuto = true;
     bool coolerAuto = true;
     bool heaterAuto = true;
+    bool phLoweringAuto = true;
+    bool phRaisingAuto = true;
 
     // Emergency overrides
     bool emergencyMode = false;
@@ -66,6 +70,8 @@ struct RealTimeData {
         bool valve;
         bool cooler;
         bool heater;
+        bool phLowering;
+        bool phRaising;
     } relayStates;
 };  
 

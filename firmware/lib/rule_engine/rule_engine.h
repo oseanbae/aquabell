@@ -17,6 +17,7 @@ void checkFanLogic(ActuatorState& actuators, float airTemp, float humidity, unsi
 void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis);
 void checkCoolerLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);
 void checkHeaterLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);
+void checkpHPumpLogic(ActuatorState& actuators, float pH, unsigned long nowMillis);
 
 // Main rule evaluation entry point
 void evaluateRules(bool forceImmediate = false);

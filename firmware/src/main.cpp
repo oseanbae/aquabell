@@ -130,6 +130,12 @@ void loop() {
     bool floatState = float_switch_active();  // get current float switch state
     current.floatTriggered = floatState; // update data struct
 
+    // ===== pH PUMP LOGIC - Always runs independently, no Firebase dependency =====
+    // Must run every loop iteration for non-blocking timing control
+    checkpHPumpLogic(actuators, current.pH, nowMillis);
+    current.relayStates.phRaising = actuators.phRaising;
+    current.relayStates.phLowering = actuators.phLowering;
+
     // Update LCD
     if (sensorsUpdated || commandsChangedViaStream || floatEvent) {
         lcd_display(current);
@@ -164,6 +170,7 @@ void loop() {
             current.relayStates.valve     = actuators.valve;
             current.relayStates.cooler = actuators.cooler;
             current.relayStates.heater = actuators.heater;
+            // pH pump states already reflected above (runs independently)
 
             // === Sync to Firebase if ready ===
             if (wifiUp && fbReady && cmdsSynced) {
