@@ -42,7 +42,9 @@ void evaluateRules(bool forceImmediate) {
                           (millis() - lastRelaySync > RELAY_SYNC_COOLDOWN);
         if (forceImmediate || debounceOk) {
             syncRelayState(current, currentCommands);
-            pushToRTDBLive(current);
+            // Use empty array if no sensors updated (for relay state sync only)
+            bool emptySensors[6] = {false, false, false, false, false, false};
+            pushToRTDBLive(current, emptySensors);
             lastRelaySync = millis();
         } else {
             Serial.println("[EVAL] Skipping sync — debounce/cooldown active");
@@ -489,87 +491,57 @@ void checkHeaterLogic(ActuatorState &actuators, float waterTemp, unsigned long n
     }
 }
 
-void checkpHPumpLogic(ActuatorState &actuators, float phValue, unsigned long nowMillis)
-{
+void checkpHPumpLogic(ActuatorState &actuators, float phValue, unsigned long nowMillis) {
     if (isnan(phValue)) return;
 
-    // pH pump runs fully automated - no Firebase dependency
-    // Always enabled in auto mode
     static unsigned long lastDoseStart = 0;
     static unsigned long lastCheckTime = 0;
     static bool pumpRunning = false;
-    static int pumpType = 0; // 0 = none, 1 = raising (UP), -1 = lowering (DOWN)
-    
-    // pH pump timing constants (defined in config.h)
-    const unsigned long MIN_CHECK_INTERVAL_MS = PH_MIN_CHECK_INTERVAL_MS; 
-    const unsigned long PUMP_RUN_MS = PH_PUMP_RUN_MS;
-    const unsigned long REST_PERIOD_MS = PH_REST_PERIOD_MS;
-    const float PH_LOW  = PH_LOW_THRESHOLD;
-    const float PH_HIGH = PH_HIGH_THRESHOLD;
 
-    // Non-blocking pump control: check if pump should stop
-    if (pumpRunning && (nowMillis - lastDoseStart >= PUMP_RUN_MS)) {
-        // Pump run time completed - turn off
+    // --- Stop pump if dose complete ---
+    if (pumpRunning && nowMillis - lastDoseStart >= PH_PUMP_RUN_MS) {
+        control_ph_pump(false, false);
         actuators.phRaising = false;
         actuators.phLowering = false;
-        control_ph_pump(false, false);
         pumpRunning = false;
-        pumpType = 0;
-        lastCheckTime = nowMillis; // Start rest period
+        lastCheckTime = nowMillis; // start rest period
         Serial.printf("[AUTO PH] Dose complete - pump OFF\n");
+        return; // pump just stopped, skip further checks this loop
     }
 
-    // If pump is running, don't check pH again until it finishes
-    if (pumpRunning) {
-        return;
-    } 
-    if (!pumpRunning) {
-        if ((nowMillis - lastCheckTime) < MIN_CHECK_INTERVAL_MS || 
-            (nowMillis - lastCheckTime) < REST_PERIOD_MS) {
-            return;
-        }
-        lastCheckTime = nowMillis; // mark that we did a pH check
-    }
+    // --- Respect rest period ---
+    if (lastCheckTime > 0 && nowMillis - lastCheckTime < PH_REST_PERIOD_MS) return;
 
-    // Check if we're in rest period after last dose
-    if (lastCheckTime > 0 && (nowMillis - lastCheckTime) < REST_PERIOD_MS) {
-        return; // Still in rest period
-    }
+    // --- Minimum interval between checks ---
+    static unsigned long lastPhCheck = 0;
+    if (lastPhCheck > 0 && nowMillis - lastPhCheck < PH_MIN_CHECK_INTERVAL_MS) return;
+    lastPhCheck = nowMillis;
 
-    // Minimum interval between checks
-    if (lastCheckTime > 0 && (nowMillis - lastCheckTime) < MIN_CHECK_INTERVAL_MS) {
-        return;
-    }
-
-    // Check pH conditions and start dosing if needed
-    if (phValue < PH_LOW) {
-        // pH too low - need to raise it
-        Serial.printf("[AUTO PH] Low pH (%.2f) → Starting pH UP dose\n", phValue);
+    // --- Hysteresis logic ---
+    if (phValue < PH_LOW_THRESHOLD && !pumpRunning) {
+        control_ph_pump(true, false);   // start pH UP
         actuators.phRaising = true;
         actuators.phLowering = false;
-        control_ph_pump(true, false); // Run UP pump
         pumpRunning = true;
-        pumpType = 1;
         lastDoseStart = nowMillis;
-    } 
-    else if (phValue > PH_HIGH) {
-        // pH too high - need to lower it
-        Serial.printf("[AUTO PH] High pH (%.2f) → Starting pH DOWN dose\n", phValue);
+        Serial.printf("[AUTO PH] Low pH (%.2f) → Starting pH UP dose\n", phValue);
+    }
+    else if (phValue > PH_HIGH_THRESHOLD && !pumpRunning) {
+        control_ph_pump(false, true);   // start pH DOWN
         actuators.phRaising = false;
         actuators.phLowering = true;
-        control_ph_pump(false, true); // Run DOWN pump
         pumpRunning = true;
-        pumpType = -1;
         lastDoseStart = nowMillis;
-    } 
-    else {
-        // pH within safe range → ensure pumps are off
-        if (actuators.phRaising || actuators.phLowering) {
-            actuators.phRaising = false;
-            actuators.phLowering = false;
-            control_ph_pump(false, false);
-            Serial.printf("[AUTO PH] pH in range (%.2f) → Pumps OFF\n", phValue);
-        }
-        lastCheckTime = nowMillis;
+        Serial.printf("[AUTO PH] High pH (%.2f) → Starting pH DOWN dose\n", phValue);
+    }
+    else if ((actuators.phRaising && phValue >= PH_LOW_OFF) ||
+             (actuators.phLowering && phValue <= PH_HIGH_OFF)) {
+        // Turn off pumps if back in safe range
+        control_ph_pump(false, false);
+        actuators.phRaising = false;
+        actuators.phLowering = false;
+        pumpRunning = false;
+        lastCheckTime = nowMillis; // rest period after turning off
+        Serial.printf("[AUTO PH] pH back in safe range (%.2f) → Pumps OFF\n", phValue);
     }
 }

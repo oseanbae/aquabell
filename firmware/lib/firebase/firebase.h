@@ -21,7 +21,7 @@ struct Commands {
     CommandState heater;
 };
 
-void pushToRTDBLive(const RealTimeData &data);
+void pushToRTDBLive(const RealTimeData &data, const bool updatedSensors[6]);
 bool pushBatchLogToFirestore(RealTimeData *buffer, int size, time_t timestamp);
 bool firebaseSignIn();
 bool fetchControlCommands();

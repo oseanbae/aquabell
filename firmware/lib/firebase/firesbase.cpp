@@ -283,13 +283,9 @@ static bool extractSSEJson(const String &rawPayload, String &outJson) {
 }
 
 // ===== FIREBASE RTDB & Firestore INTERACTIONS =====
-void pushToRTDBLive(const RealTimeData &data) {
-    // Skip if not connected
-    if (WiFi.status() != WL_CONNECTED) {
-        return;
-    }
-
-    // Skip if token expired
+// Push only sensors that were updated
+void pushToRTDBLive(const RealTimeData &data, const bool updatedSensors[6]) {
+    if (WiFi.status() != WL_CONNECTED) return;
     if (millis() > tokenExpiryTime) {
         Serial.println("[RTDB] Token expired, skipping live update");
         return;
@@ -298,13 +294,17 @@ void pushToRTDBLive(const RealTimeData &data) {
     String url = "https://aquabell-cap2025-default-rtdb.asia-southeast1.firebasedatabase.app/live_data/" DEVICE_ID ".json?auth=" + idToken;
 
     JsonDocument doc;
-    if (!isnan(data.waterTemp)) doc["waterTemp"] = data.waterTemp;
-    if (!isnan(data.pH)) doc["pH"] = data.pH;
-    if (!isnan(data.dissolvedOxygen)) doc["dissolvedOxygen"] = data.dissolvedOxygen;
-    if (!isnan(data.turbidityNTU)) doc["turbidityNTU"] = data.turbidityNTU;
-    if (!isnan(data.airTemp)) doc["airTemp"] = data.airTemp;
-    if (!isnan(data.airHumidity)) doc["airHumidity"] = data.airHumidity;
-    doc["floatTriggered"] = data.floatTriggered;
+    if (updatedSensors[0] && !isnan(data.waterTemp)) doc["waterTemp"] = data.waterTemp;
+    if (updatedSensors[1] && !isnan(data.pH)) doc["pH"] = data.pH;
+    if (updatedSensors[2] && !isnan(data.dissolvedOxygen)) doc["dissolvedOxygen"] = data.dissolvedOxygen;
+    if (updatedSensors[3] && !isnan(data.turbidityNTU)) doc["turbidityNTU"] = data.turbidityNTU;
+    if (updatedSensors[4]) {
+        if (!isnan(data.airTemp)) doc["airTemp"] = data.airTemp;
+        if (!isnan(data.airHumidity)) doc["airHumidity"] = data.airHumidity;
+    }
+    if (updatedSensors[5]) doc["floatTriggered"] = data.floatTriggered;
+
+    // Always update timestamp
     doc["timestamp"] = time(nullptr);
 
     String payload;

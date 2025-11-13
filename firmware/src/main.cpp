@@ -42,7 +42,7 @@ unsigned long lastRelaySync = 0;
 
 // === FORWARD DECLARATIONS ===
 void initAllModules();
-bool readSensors(unsigned long now, RealTimeData &data);
+bool readSensorsMultiInterval(unsigned long now, RealTimeData &data, bool updatedSensors[5]);
 void connectWiFi();
 
 // === UTILS ===
@@ -125,10 +125,18 @@ void loop() {
     }
 
     // === Read Sensors ===
-    bool sensorsUpdated = readSensors(nowMillis, current);
+    bool updatedSensors[5] = {false, false, false, false, false}; // waterTemp, pH, DO, turbidity, airTemp/humidity
+    bool sensorsUpdated = readSensorsMultiInterval(nowMillis, current, updatedSensors);
+
+    // Push to RTDB if any sensor updated
+    if (sensorsUpdated) {
+        pushToRTDBLive(current, updatedSensors);
+        lcd_display(current); // only update display if something changed
+    }
+    
     bool floatEvent = is_float_switch_triggered(); // check float switch state
-    bool floatState = float_switch_active();  // get current float switch state
-    current.floatTriggered = floatState; // update data struct
+    bool currentFloatState  = float_switch_active();  // get current float switch state
+    current.floatTriggered = currentFloatState; // update data struct
 
     // ===== pH PUMP LOGIC - Always runs independently, no Firebase dependency =====
     // Must run every loop iteration for non-blocking timing control
@@ -179,7 +187,9 @@ void loop() {
 
                 if (debounceExpired && cooldownExpired) {
                     syncRelayState(current, currentCommands);
-                    pushToRTDBLive(current);
+                    // Use empty array if no sensors updated (for relay state sync only)
+                    bool emptySensors[6] = {false, false, false, false, false, false};
+                    pushToRTDBLive(current, emptySensors);
                     lastRelaySync = millis();
                 } else {
                     Serial.println("[MAIN] Skipping sync — debounce/cooldown active");
@@ -236,100 +246,87 @@ void initAllModules() {
     Serial.println("✅ All modules initialized successfully.");
 }
 
-bool readSensors(unsigned long now, RealTimeData &data) {
-    static unsigned long lastSensorRead = 0;
-    static bool lastFloatState = false;
-
-    if (now - lastSensorRead < UNIFIED_SENSOR_INTERVAL) {
-        return false; 
-    }
+bool readSensorsMultiInterval(unsigned long now, RealTimeData &data, bool updatedSensors[5]) {
+    static unsigned long lastRead[5] = {0, 0, 0, 0, 0};
+    const unsigned long intervals[5] = {
+        10000,   // waterTemp: 10s
+        60000,   // pH: 1min
+        15000,   // dissolvedOxygen: 15s
+        30000,   // turbidity: 30s
+        60000    // airTemp & airHumidity: 60s
+    };
 
     bool updated = false;
+    for (int i = 0; i < 5; i++) updatedSensors[i] = false;
 
-    // --- Water Temp (°C) ---
-    float temp = USE_WATERTEMP_MOCK ? 28.5 : read_waterTemp();
-    
-    if (!isnan(temp) && temp > -50.0f && temp < 100.0f) {
-        data.waterTemp = temp;
-        updated = true;
-    } else {
-        Serial.println("⚠️ Invalid water temperature");
+    // --- Water Temp ---
+    if (now - lastRead[0] >= intervals[0]) {
+        float temp = USE_WATERTEMP_MOCK ? 28.5 : read_waterTemp();
+        if (!isnan(temp) && temp > -50.0f && temp < 100.0f) {
+            data.waterTemp = temp;
+            updatedSensors[0] = true;
+            updated = true;
+        }
+        lastRead[0] = now;
     }
 
     // --- pH ---
-    float ph = USE_PH_MOCK ? 0.0 : read_ph(data.waterTemp);
-    
-    if (!isnan(ph) && ph > -2.0f && ph < 16.0f) {
-        data.pH = ph;
-        updated = true;
-    } else {
-        static unsigned long lastPHError = 0;
-        if (now - lastPHError >= 60000) {
-            Serial.println("⚠️ Invalid pH");
-            lastPHError = now;
+    if (now - lastRead[1] >= intervals[1]) {
+        float ph = USE_PH_MOCK ? 0.0 : read_ph(data.waterTemp);
+        if (!isnan(ph) && ph > -2.0f && ph < 16.0f) {
+            data.pH = ph;
+            updatedSensors[1] = true;
+            updated = true;
         }
+        lastRead[1] = now;
     }
 
-    // --- Dissolved Oxygen (mg/L) ---
-    float doValue = USE_DO_MOCK ? 7.5 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
-    
-    if (!isnan(doValue) && doValue >= -5.0f && doValue < 25.0f) {
-        data.dissolvedOxygen = doValue;
-        updated = true;
-    } else {
-        Serial.println("⚠️ Invalid DO");
+    // --- Dissolved Oxygen ---
+    if (now - lastRead[2] >= intervals[2]) {
+        float doValue = USE_DO_MOCK ? 7.5 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
+        if (!isnan(doValue) && doValue >= -5.0f && doValue < 25.0f) {
+            data.dissolvedOxygen = doValue;
+            updatedSensors[2] = true;
+            updated = true;
+        }
+        lastRead[2] = now;
     }
 
-    // --- Turbidity (NTU) ---
-    float turbidity = USE_TURBIDITY_MOCK ? 50.0 : read_turbidity();
-    
-    if (!isnan(turbidity) && turbidity >= -100.0f && turbidity < 3000.0f) {
-        data.turbidityNTU = turbidity;
-        updated = true;
-    } else {
-        Serial.println("⚠️ Invalid turbidity");
+    // --- Turbidity ---
+    if (now - lastRead[3] >= intervals[3]) {
+        float turbidity = USE_TURBIDITY_MOCK ? 50.0 : read_turbidity();
+        if (!isnan(turbidity) && turbidity >= -100.0f && turbidity < 3000.0f) {
+            data.turbidityNTU = turbidity;
+            updatedSensors[3] = true;
+            updated = true;
+        }
+        lastRead[3] = now;
     }
 
-    // --- DHT (Air Temp °C & Humidity %) ---
-    float airTemp, airHumidity;
-    if (USE_DHT_MOCK) {
-        airTemp = 27.0;
-        airHumidity = 60.0;
-    } else {
-        airTemp = read_dhtTemp();
-        airHumidity = read_dhtHumidity();
-    }
-    
-    if (!isnan(airTemp) && !isnan(airHumidity) && 
-        airTemp > -40.0f && airTemp < 80.0f &&
-        airHumidity >= 0.0f && airHumidity <= 100.0f) {
-        data.airTemp = airTemp;
-        data.airHumidity = airHumidity;
-        updated = true;
-    } else {
-        Serial.println("⚠️ Invalid DHT");
-    }
-
-    // --- Float Switch ---
-    bool floatState = USE_FLOATSWITCH_MOCK 
-        ? false 
-        : float_switch_active();
-
-    if (floatState != lastFloatState) {
-        data.floatTriggered = floatState;
-        Serial.printf("💧 Float Switch: %s\n", floatState ? "TRIGGERED" : "NORMAL");
-        lastFloatState = floatState;
-        updated = true;
-    }
-
-    lastSensorRead = now;
-
-    if (updated) {
-        Serial.println("✅ All sensors read successfully");
+    // --- Air Temp & Humidity ---
+    if (now - lastRead[4] >= intervals[4]) {
+        float airTemp, airHumidity;
+        if (USE_DHT_MOCK) {
+            airTemp = 27.0;
+            airHumidity = 60.0;
+        } else {
+            airTemp = read_dhtTemp();
+            airHumidity = read_dhtHumidity();
+        }
+        if (!isnan(airTemp) && !isnan(airHumidity) &&
+            airTemp > -40.0f && airTemp < 80.0f &&
+            airHumidity >= 0.0f && airHumidity <= 100.0f) {
+            data.airTemp = airTemp;
+            data.airHumidity = airHumidity;
+            updatedSensors[4] = true;
+            updated = true;
+        }
+        lastRead[4] = now;
     }
 
     return updated;
 }
+
 
 // float read_ph_mock() {
 //     static float mockPH = 7.0f;

@@ -15,14 +15,17 @@
 #define HUMIDITY_MIN_THRESHOLD 62.0f
 
 // === DS18B20 (Water Temp) ===
+#define ONEWIRE_BUS      25  
 #define COOLER_ON_TEMP   29.0f
 #define COOLER_OFF_TEMP  27.5f
 #define HEATER_ON_TEMP   22.0f
 #define HEATER_OFF_TEMP  23.5f
 
 // === pH Control ===
-#define PH_LOW_THRESHOLD     6.7f   // pH below this triggers pH UP pump
-#define PH_HIGH_THRESHOLD    7.3f   // pH above this triggers pH DOWN pump
+#define PH_LOW_THRESHOLD      6.45f   // trigger UP pump
+#define PH_LOW_OFF            6.65f   // turn UP pump off
+#define PH_HIGH_THRESHOLD     7.55f   // trigger DOWN pump
+#define PH_HIGH_OFF           7.35f   // turn DOWN pump off
 #define PH_PUMP_RUN_MS       2000UL  // Duration of pH dose (2 seconds)
 #define PH_MIN_CHECK_INTERVAL_MS 60000UL  // Minimum interval between pH checks (1 minute)
 #define PH_REST_PERIOD_MS    300000UL // Rest period after dose before next check (5 minutes)
