@@ -494,54 +494,79 @@ void checkHeaterLogic(ActuatorState &actuators, float waterTemp, unsigned long n
 void checkpHPumpLogic(ActuatorState &actuators, float phValue, unsigned long nowMillis) {
     if (isnan(phValue)) return;
 
-    static unsigned long lastDoseStart = 0;
-    static unsigned long lastCheckTime = 0;
-    static bool pumpRunning = false;
-
-    // --- Stop pump if dose complete ---
-    if (pumpRunning && nowMillis - lastDoseStart >= PH_PUMP_RUN_MS) {
-        control_ph_pump(false, false);
-        actuators.phRaising = false;
-        actuators.phLowering = false;
-        pumpRunning = false;
-        lastCheckTime = nowMillis; // start rest period
-        Serial.printf("[AUTO PH] Dose complete - pump OFF\n");
-        return; // pump just stopped, skip further checks this loop
-    }
-
-    // --- Respect rest period ---
-    if (lastCheckTime > 0 && nowMillis - lastCheckTime < PH_REST_PERIOD_MS) return;
-
-    // --- Minimum interval between checks ---
+    static unsigned long lastDoseEnd = 0;
     static unsigned long lastPhCheck = 0;
+    static bool dosingInProgress = false;
+    static int dosingAttempts = 0;
+
+    // --- Stop if within rest period ---
+    if (lastDoseEnd > 0 && nowMillis - lastDoseEnd < PH_REST_PERIOD_MS) return;
+
+    // --- Limit how often to check ---
     if (lastPhCheck > 0 && nowMillis - lastPhCheck < PH_MIN_CHECK_INTERVAL_MS) return;
     lastPhCheck = nowMillis;
 
-    // --- Hysteresis logic ---
-    if (phValue < PH_LOW_THRESHOLD && !pumpRunning) {
-        control_ph_pump(true, false);   // start pH UP
+    // --- Handle pH UP dosing ---
+    if (phValue < PH_LOW_THRESHOLD && !dosingInProgress) {
+        dosingInProgress = true;
         actuators.phRaising = true;
         actuators.phLowering = false;
-        pumpRunning = true;
-        lastDoseStart = nowMillis;
-        Serial.printf("[AUTO PH] Low pH (%.2f) → Starting pH UP dose\n", phValue);
+
+        Serial.printf("[AUTO PH] Low pH (%.2f) → Starting gradual UP dosing\n", phValue);
+
+        for (int i = 0; i < PH_PULSE_COUNT; i++) {
+            control_ph_pump(true, false);
+            delay(PH_PULSE_MS);
+            control_ph_pump(false, false);
+
+            Serial.printf("[AUTO PH] UP pulse %d/%d complete\n", i + 1, PH_PULSE_COUNT);
+            delay(PH_PULSE_GAP_MS);
+        }
+
+        dosingInProgress = false;
+        dosingAttempts++;
+        lastDoseEnd = nowMillis;
     }
-    else if (phValue > PH_HIGH_THRESHOLD && !pumpRunning) {
-        control_ph_pump(false, true);   // start pH DOWN
+
+    // --- Handle pH DOWN dosing ---
+    else if (phValue > PH_HIGH_THRESHOLD && !dosingInProgress) {
+        dosingInProgress = true;
         actuators.phRaising = false;
         actuators.phLowering = true;
-        pumpRunning = true;
-        lastDoseStart = nowMillis;
-        Serial.printf("[AUTO PH] High pH (%.2f) → Starting pH DOWN dose\n", phValue);
+
+        Serial.printf("[AUTO PH] High pH (%.2f) → Starting gradual DOWN dosing\n", phValue);
+
+        for (int i = 0; i < PH_PULSE_COUNT; i++) {
+            control_ph_pump(false, true);
+            delay(PH_PULSE_MS);
+            control_ph_pump(false, false);
+
+            Serial.printf("[AUTO PH] DOWN pulse %d/%d complete\n", i + 1, PH_PULSE_COUNT);
+            delay(PH_PULSE_GAP_MS);
+        }
+
+        dosingInProgress = false;
+        dosingAttempts++;
+        lastDoseEnd = nowMillis;
     }
+
+    // --- Stop when pH returns to safe range ---
     else if ((actuators.phRaising && phValue >= PH_LOW_OFF) ||
              (actuators.phLowering && phValue <= PH_HIGH_OFF)) {
-        // Turn off pumps if back in safe range
         control_ph_pump(false, false);
         actuators.phRaising = false;
         actuators.phLowering = false;
-        pumpRunning = false;
-        lastCheckTime = nowMillis; // rest period after turning off
+        dosingInProgress = false;
+        dosingAttempts = 0;
+        lastDoseEnd = nowMillis;
+
         Serial.printf("[AUTO PH] pH back in safe range (%.2f) → Pumps OFF\n", phValue);
+    }
+
+    // --- Safety: too many consecutive doses ---
+    if (dosingAttempts >= PH_MAX_DOSING_ATTEMPTS) {
+        Serial.println("[AUTO PH] ⚠️ Too many consecutive doses. Forcing rest period.");
+        dosingAttempts = 0;
+        lastDoseEnd = nowMillis; // enforce rest
     }
 }

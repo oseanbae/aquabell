@@ -21,14 +21,21 @@
 #define HEATER_ON_TEMP   22.0f
 #define HEATER_OFF_TEMP  23.5f
 
-// === pH Control ===
-#define PH_LOW_THRESHOLD      6.45f   // trigger UP pump
-#define PH_LOW_OFF            6.65f   // turn UP pump off
-#define PH_HIGH_THRESHOLD     7.55f   // trigger DOWN pump
-#define PH_HIGH_OFF           7.35f   // turn DOWN pump off
-#define PH_PUMP_RUN_MS       2000UL  // Duration of pH dose (2 seconds)
-#define PH_MIN_CHECK_INTERVAL_MS 60000UL  // Minimum interval between pH checks (1 minute)
-#define PH_REST_PERIOD_MS    300000UL // Rest period after dose before next check (5 minutes)
+// === pH Control (R385-Compatible) ===
+// Hysteresis thresholds remain the same
+#define PH_LOW_THRESHOLD       6.45f
+#define PH_LOW_OFF             6.65f
+#define PH_HIGH_THRESHOLD      7.55f
+#define PH_HIGH_OFF            7.35f
+
+// --- Dosing behavior adjustments for R385 ---
+#define PH_PULSE_MS            500UL     // single pulse duration (short burst)
+#define PH_PULSE_COUNT         3         // number of pulses per dose cycle
+#define PH_PULSE_GAP_MS        1000UL    // gap between pulses (1s)
+#define PH_MIN_CHECK_INTERVAL_MS 60000UL // check pH every 1 minute
+#define PH_REST_PERIOD_MS      300000UL  // 5-minute rest after each full dose
+// Optional: dynamic control for gradual correction
+#define PH_MAX_DOSING_ATTEMPTS 3         // max retries before forcing rest
 
 // === Turbidity =============
 #define TURBIDITY_PIN           35
