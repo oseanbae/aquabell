@@ -8,34 +8,9 @@
 // === DHT Sensor (Air Temp/RH)
 #define DHT_PIN               23
 #define DHT_TYPE              11
-// Fan Control Thresholds (with hysteresis)
-#define TEMP_ON_THRESHOLD      29.0f
-#define TEMP_OFF_THRESHOLD     26.5f
-#define HUMIDITY_MAX_THRESHOLD 75.0f
-#define HUMIDITY_MIN_THRESHOLD 62.0f
 
 // === DS18B20 (Water Temp) ===
 #define ONEWIRE_BUS      25  
-#define COOLER_ON_TEMP   29.0f
-#define COOLER_OFF_TEMP  27.5f
-#define HEATER_ON_TEMP   22.0f
-#define HEATER_OFF_TEMP  23.5f
-
-// === pH Control (R385-Compatible) ===
-// Hysteresis thresholds remain the same
-#define PH_LOW_THRESHOLD       6.45f
-#define PH_LOW_OFF             6.65f
-#define PH_HIGH_THRESHOLD      7.55f
-#define PH_HIGH_OFF            7.35f
-
-// --- Dosing behavior adjustments for R385 ---
-#define PH_PULSE_MS            500UL     // single pulse duration (short burst)
-#define PH_PULSE_COUNT         3         // number of pulses per dose cycle
-#define PH_PULSE_GAP_MS        1000UL    // gap between pulses (1s)
-#define PH_MIN_CHECK_INTERVAL_MS 60000UL // check pH every 1 minute
-#define PH_REST_PERIOD_MS      300000UL  // 5-minute rest after each full dose
-// Optional: dynamic control for gradual correction
-#define PH_MAX_DOSING_ATTEMPTS 3         // max retries before forcing rest
 
 // === Turbidity =============
 #define TURBIDITY_PIN           35
@@ -82,25 +57,47 @@
 #define PH_LOWERING_RELAY_PIN  2
 #define PH_RAISING_RELAY_PIN   15
 
+// === Actuator Control Thresholds ====
+// === Air Temp / Fan ===
+#define TEMP_ON_THRESHOLD      29.1f
+#define TEMP_OFF_THRESHOLD     26.9f
+// === Humidity ===
+#define HUMIDITY_MAX_THRESHOLD 70.1f   // instead of 75.0f
+#define HUMIDITY_MIN_THRESHOLD 60.0f   // instead of 62.0f
+
+// Water Cooler/Heater Control Thresholds (with hysteresis)
+#define COOLER_ON_TEMP   29.0f
+#define COOLER_OFF_TEMP  27.5f
+#define HEATER_ON_TEMP   22.0f
+#define HEATER_OFF_TEMP  23.5f
+// === pH Control (R385-Compatible) ===
+// Hysteresis thresholds remain the same
+#define PH_LOW_THRESHOLD       6.45f
+#define PH_LOW_OFF             6.65f
+#define PH_HIGH_THRESHOLD      7.55f
+#define PH_HIGH_OFF            7.35f
 // === Pump Control =========
 #define PUMP_ON_DURATION       15U   // minutes
 #define PUMP_OFF_DURATION      45U   // minutes
-
-
 // === Lighting Control ======
 // Define lighting schedule in minutes from midnight
 #define MINUTES(h, m) ((h) * 60 + (m))
-
 #define LIGHT_MORNING_ON   MINUTES(5, 30)   // 5:30 AM
 #define LIGHT_MORNING_OFF  MINUTES(11, 0)   // 11:00 AM (Start of Siesta/Midday heat)
 #define LIGHT_EVENING_ON   MINUTES(15, 0)   // 3:00 PM (End of Siesta/Midday heat)
 #define LIGHT_EVENING_OFF  MINUTES(21, 30)  // 9:30 PM (End of total photoperiod)
-
-
 // === Float/Valve Safety =====
 // Debounce windows for float switch transitions
 #define FLOAT_LOW_DEBOUNCE_MS   3000UL   // require low for 3s
 #define FLOAT_HIGH_DEBOUNCE_MS  3000UL   // require high for 3s
+// --- Dosing behavior adjustments for R385 ---
+#define PH_PULSE_MS            500UL     // single pulse duration (short burst)
+#define PH_PULSE_COUNT         3         // number of pulses per dose cycle
+#define PH_PULSE_GAP_MS        1000UL    // gap between pulses (1s)
+#define PH_MIN_CHECK_INTERVAL_MS 60000UL // check pH every 1 minute
+#define PH_REST_PERIOD_MS      300000UL  // 5-minute rest after each full dose
+// Optional: dynamic control for gradual correction
+#define PH_MAX_DOSING_ATTEMPTS 3         // max retries before forcing rest
 
 
 #define RELAY_SYNC_COOLDOWN 2000UL
