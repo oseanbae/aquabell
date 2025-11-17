@@ -3,7 +3,7 @@
 #include "config.h"
 #include <Arduino.h>
 
-OneWire oneWire(ONE_WIRE_BUS);
+OneWire oneWire(ONEWIRE_BUS);
 DallasTemperature sensor(&oneWire);
 
 // Initialize the water temperature sensor
