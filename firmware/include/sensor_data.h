@@ -15,6 +15,7 @@ struct ActuatorState {
     bool heater = false;
     bool phLowering = false;
     bool phRaising = false;
+    bool phDosingEnabled = true;
 
     // Control modes
     bool fanAuto = true;
@@ -52,6 +53,7 @@ struct ActuatorState {
     bool valveAutoJustEnabled = false;
     bool coolerAutoJustEnabled = false;
     bool heaterAutoJustEnabled = false;
+    bool phDosingJustEnabled = false;
 };
 
 struct RealTimeData {

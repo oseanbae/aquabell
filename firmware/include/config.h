@@ -54,7 +54,7 @@
 #define VALVE_RELAY_PIN        17
 #define WATER_COOLER_RELAY_PIN 16
 #define WATER_HEATER_RELAY_PIN 4
-#define PH_LOWERING_RELAY_PIN  2
+#define PH_LOWERING_RELAY_PIN  27
 #define PH_RAISING_RELAY_PIN   15
 
 // === Actuator Control Thresholds ====
@@ -70,12 +70,7 @@
 #define COOLER_OFF_TEMP  27.5f
 #define HEATER_ON_TEMP   22.0f
 #define HEATER_OFF_TEMP  23.5f
-// === pH Control (R385-Compatible) ===
-// Hysteresis thresholds remain the same
-#define PH_LOW_THRESHOLD       6.45f
-#define PH_LOW_OFF             6.65f
-#define PH_HIGH_THRESHOLD      7.55f
-#define PH_HIGH_OFF            7.35f
+
 // === Pump Control =========
 #define PUMP_ON_DURATION       15U   // minutes
 #define PUMP_OFF_DURATION      45U   // minutes
@@ -90,6 +85,13 @@
 // Debounce windows for float switch transitions
 #define FLOAT_LOW_DEBOUNCE_MS   3000UL   // require low for 3s
 #define FLOAT_HIGH_DEBOUNCE_MS  3000UL   // require high for 3s
+
+// === pH Control (R385-Compatible) ===
+// Hysteresis thresholds remain the same
+#define PH_LOW_THRESHOLD       6.45f
+#define PH_LOW_OFF             6.65f
+#define PH_HIGH_THRESHOLD      7.55f
+#define PH_HIGH_OFF            7.35f
 // --- Dosing behavior adjustments for R385 ---
 #define PH_PULSE_MS            500UL     // single pulse duration (short burst)
 #define PH_PULSE_COUNT         3         // number of pulses per dose cycle
@@ -104,8 +106,8 @@
 
 //=== WIFI Configuration ===
 //JP'S HOME WIFI
-#define WIFI_SSID   "meow"
-#define WIFI_PASS   "helloworld2025"
+// #define WIFI_SSID   "meow"
+// #define WIFI_PASS   "helloworld2025"
 
 //Capstone wifi
 // #define WIFI_SSID           "Capstone"
@@ -130,3 +132,7 @@
 
 // #define WIFI_SSID           "PSU_HR"
 // #define WIFI_PASS           "PSUHR2K25"
+
+
+#define WIFI_SSID           "aaaa"
+#define WIFI_PASS           "11223344"

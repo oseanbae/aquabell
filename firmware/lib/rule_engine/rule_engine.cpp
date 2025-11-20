@@ -70,6 +70,7 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     static bool prevValveAuto = true;
     static bool prevCoolerAuto = true;
     static bool prevHeaterAuto = true;
+    static bool prevPhDosingEnabled = true;
 
     bool fanAutoTransition   = commands.fan.isAuto   && !prevFanAuto;
     bool lightAutoTransition = commands.light.isAuto && !prevLightAuto;
@@ -77,6 +78,7 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     bool valveAutoTransition = commands.valve.isAuto && !prevValveAuto;
     bool coolerAutoTransition = commands.cooler.isAuto && !prevCoolerAuto;
     bool heaterAutoTransition = commands.heater.isAuto && !prevHeaterAuto;
+    bool phDosingTransition = commands.phDosing.phDosingEnabled && !prevPhDosingEnabled;
 
     // --- FAN ---
     if (!commands.fan.isAuto) {
@@ -156,6 +158,30 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
         }
     }
 
+    // --- PH DOSING SAFETY ---
+    if (!commands.phDosing.phDosingEnabled) {
+        if (actuators.phDosingEnabled) {
+            Serial.println("[RULE_ENGINE] 🧪 pH dosing DISABLED via RTDB — halting automation");
+        }
+        actuators.phDosingEnabled = false;
+        actuators.phDosingJustEnabled = false;
+        if (actuators.phRaising || actuators.phLowering) {
+            control_ph_pump(false, false);
+            actuators.phRaising = false;
+            actuators.phLowering = false;
+            Serial.println("[RULE_ENGINE] 🧪 Chemical pumps OFF (manual disable)");
+        }
+    } else {
+        if (!actuators.phDosingEnabled) {
+            Serial.println("[RULE_ENGINE] 🧪 pH dosing AUTO re-enabled — monitoring pH");
+        }
+        actuators.phDosingEnabled = true;
+        if (phDosingTransition) {
+            actuators.phDosingJustEnabled = true;
+            Serial.println("[RULE_ENGINE] 🧪 pH dosing toggle detected — resetting algorithm timers");
+        }
+    }
+
     // ===== 3. AUTO CONTROL RULES =====
     if (actuators.fanAuto)   checkFanLogic(actuators, data.airTemp, data.airHumidity, nowMillis);
     if (actuators.lightAuto) checkLightLogic(actuators, nowMillis);
@@ -205,6 +231,7 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     prevValveAuto = commands.valve.isAuto;
     prevCoolerAuto = commands.cooler.isAuto;
     prevHeaterAuto = commands.heater.isAuto;
+    prevPhDosingEnabled = commands.phDosing.phDosingEnabled;
 }
 
 // ===== FALLBACK CONTROL FUNCTIONS =====
@@ -368,7 +395,7 @@ void checkFanLogic(ActuatorState& actuators, float t, float h, unsigned long now
         actuators.fan = false;
         control_fan(false);
         last = now;
-        Serial.printf("[RULE_ENGINE] Fan OFF (T=%.1f, H=%.1f)\n", t, h);
+        Serial.printf("[RULE_ENGINE] Fan OFF (T=%.1f, H=%.1f)\n", t, h);    
     }
 }
 
@@ -377,7 +404,7 @@ void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis) {
 
     if (actuators.lightAutoJustEnabled) actuators.lightAutoJustEnabled = false;
 
-    if (isTimeAvailable()) {
+    if (isTimeAvailable()) {    
         struct tm timeinfo;
         if (getLocalTm(timeinfo)) {
             int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
@@ -498,6 +525,26 @@ void checkpHPumpLogic(ActuatorState &actuators, float phValue, unsigned long now
     static unsigned long lastPhCheck = 0;
     static bool dosingInProgress = false;
     static int dosingAttempts = 0;
+
+    if (!actuators.phDosingEnabled) {
+        if (dosingInProgress || actuators.phRaising || actuators.phLowering) {
+            control_ph_pump(false, false);
+            actuators.phRaising = false;
+            actuators.phLowering = false;
+            dosingInProgress = false;
+            Serial.println("[AUTO PH] Disabled — chemical pumps OFF");
+        }
+        return;
+    }
+
+    if (actuators.phDosingJustEnabled) {
+        actuators.phDosingJustEnabled = false;
+        dosingInProgress = false;
+        dosingAttempts = 0;
+        lastDoseEnd = 0;
+        lastPhCheck = 0;
+        Serial.println("[AUTO PH] Dosing automation re-enabled — timers reset");
+    }
 
     // --- Stop if within rest period ---
     if (lastDoseEnd > 0 && nowMillis - lastDoseEnd < PH_REST_PERIOD_MS) return;

@@ -316,7 +316,7 @@ void pushToRTDBLive(const RealTimeData &data, const bool updatedSensors[6]) {
     https.begin(client, url);
     https.addHeader("Content-Type", "application/json");
 
-    int httpResponseCode = https.PUT(payload);
+    int httpResponseCode = https.PATCH(payload);
     Serial.printf("[RTDB] pushToRTDBLive HTTP response: %d\n", httpResponseCode);
 
     if (httpResponseCode == 200) {
@@ -463,59 +463,48 @@ bool fetchControlCommands() {
     }
 
     bool anyManualControl = false;
-    // Update in-memory commands so rule engine respects modes immediately
     extern Commands currentCommands;
 
-    // Check each actuator individually
-    const char* actuators[] = {"fan", "light", "pump", "valve", "cooler", "heater"};
-    void (*controlFunctions[])(bool) = {
-                                        control_fan,
-                                        control_light,
-                                        control_pump, 
-                                        control_valve, 
-                                        control_cooler,
-                                        control_heater
-                                    };
+    auto handleActuator = [&](const char* key, CommandState& cmd, void (*controlFn)(bool)) {
+        if (doc[key].isNull()) return;
+        JsonObject actuatorData = doc[key].as<JsonObject>();
+        if (actuatorData.isNull()) return;
 
-    for (int i = 0; i < 5; i++) {
-        const char* actuator = actuators[i];
-        
-        if (!doc[actuator].isNull()) {
-            JsonObject actuatorData = doc[actuator].as<JsonObject>();
-            if (!actuatorData.isNull()) {
-                bool isAuto = actuatorData["isAuto"].as<bool>();
-                bool value = actuatorData["value"].as<bool>();
-                
-                Serial.printf("[Control] %s isAuto=%s value=%s\n", 
-                             actuator, isAuto ? "true" : "false", value ? "true" : "false");
+        bool isAuto = actuatorData["isAuto"].isNull() ? cmd.isAuto : actuatorData["isAuto"].as<bool>();
+        bool value = actuatorData["value"].isNull() ? cmd.value : actuatorData["value"].as<bool>();
 
-                // Persist into currentCommands for rule engine gating
-                if (strcmp(actuator, "fan") == 0) {
-                    currentCommands.fan.isAuto = isAuto;
-                    currentCommands.fan.value = value;
-                } else if (strcmp(actuator, "light") == 0) {
-                    currentCommands.light.isAuto = isAuto;
-                    currentCommands.light.value = value;
-                } else if (strcmp(actuator, "pump") == 0) {
-                    currentCommands.pump.isAuto = isAuto;
-                    currentCommands.pump.value = value;
-                } else if (strcmp(actuator, "valve") == 0) {
-                    currentCommands.valve.isAuto = isAuto;
-                    currentCommands.valve.value = value;
-                } else if (strcmp(actuator, "cooler") == 0) {
-                    currentCommands.cooler.isAuto = isAuto;
-                    currentCommands.cooler.value = value;
-                } else if (strcmp(actuator, "heater") == 0) {
-                    currentCommands.heater.isAuto = isAuto;
-                    currentCommands.heater.value = value;
-                }
-                
-                if (!isAuto) { // Manual mode when isAuto is false
-                    controlFunctions[i](value);
-                    anyManualControl = true;
-                    Serial.printf("[Control] Applied manual control for %s\n", actuator);
-                }
+        cmd.isAuto = isAuto;
+        cmd.value = value;
+
+        Serial.printf("[Control] %s isAuto=%s value=%s\n",
+                      key, isAuto ? "true" : "false", value ? "true" : "false");
+
+        if (!isAuto) {
+            controlFn(value);
+            anyManualControl = true;
+            Serial.printf("[Control] Applied manual control for %s\n", key);
+        }
+    };
+
+    handleActuator("fan", currentCommands.fan, control_fan);
+    handleActuator("light", currentCommands.light, control_light);
+    handleActuator("pump", currentCommands.pump, control_pump);
+    handleActuator("valve", currentCommands.valve, control_valve);
+    handleActuator("cooler", currentCommands.cooler, control_cooler);
+    handleActuator("heater", currentCommands.heater, control_heater);
+
+    if (!doc["phDosing"].isNull()) {
+        JsonObject phObj = doc["phDosing"].as<JsonObject>();
+        if (!phObj.isNull()) {
+            if (!phObj["phDosingEnabled"].isNull()) {
+                currentCommands.phDosing.phDosingEnabled = phObj["phDosingEnabled"].as<bool>();
             }
+            if (!phObj["value"].isNull()) {
+                currentCommands.phDosing.value = phObj["value"].as<bool>();
+            }
+            Serial.printf("[Control] phDosing enabled=%s value=%s\n",
+                          currentCommands.phDosing.phDosingEnabled ? "true" : "false",
+                          currentCommands.phDosing.value ? "true" : "false");
         }
     }
 
@@ -555,6 +544,13 @@ void syncRelayState(const RealTimeData &data, const Commands &commands) {
     if (commands.valve.isAuto)  doc["valve/value"] = data.relayStates.valve;
     if (commands.cooler.isAuto)  doc["cooler/value"] = data.relayStates.cooler;
     if (commands.heater.isAuto)  doc["heater/value"] = data.relayStates.heater;
+
+    bool phActive = data.relayStates.phRaising || data.relayStates.phLowering;
+    bool shouldSyncPh = (commands.phDosing.value != phActive);
+    if (shouldSyncPh) {
+        doc["phDosing/value"] = phActive;
+    }
+
     if (doc.size() == 0) return;  // Nothing to sync
 
     String payload;
@@ -571,6 +567,10 @@ void syncRelayState(const RealTimeData &data, const Commands &commands) {
 
     if (httpResponseCode == 200) {
         Serial.println("[RTDB] Relay sync ✅");
+        if (shouldSyncPh) {
+            extern Commands currentCommands;
+            currentCommands.phDosing.value = phActive;
+        }
     } else {
         Serial.printf("[RTDB] Relay sync failed (%d)\n", httpResponseCode);
         initRetryState(url, payload, true);
@@ -694,6 +694,24 @@ void processPatchEvent(const String& dataPath, JsonDocument& patchData, Commands
                 currentCommands.heater.value = newValue;
                 hasChanges = true;
                 Serial.printf("[RTDB Stream] Heater value: %s\n", newValue ? "true" : "false");
+            }
+        }
+    }
+    else if (dataPath == "/phDosing") {
+        if (!patchData["phDosingEnabled"].isNull()) {
+            bool enabled = patchData["phDosingEnabled"].as<bool>();
+            if (currentCommands.phDosing.phDosingEnabled != enabled) {
+                currentCommands.phDosing.phDosingEnabled = enabled;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] pH dosing enabled: %s\n", enabled ? "true" : "false");
+            }
+        }
+        if (!patchData["value"].isNull()) {
+            bool newValue = patchData["value"].as<bool>();
+            if (currentCommands.phDosing.value != newValue) {
+                currentCommands.phDosing.value = newValue;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] pH dosing value: %s\n", newValue ? "true" : "false");
             }
         }
     }
@@ -828,6 +846,21 @@ void onRTDBStream(AsyncResult &result) {
         handleActuator("valve");
         handleActuator("cooler");
         handleActuator("heater");
+        if (changedPath.startsWith("/phDosing")) {
+            bool wasEnabled = currentCommands.phDosing.phDosingEnabled;
+            JsonDocument obj;
+            obj.set(changedData);
+            processPatchEvent("/phDosing", obj, currentCommands, hasChanges);
+            if (!obj["phDosingEnabled"].isNull()) {
+                bool enabledNow = obj["phDosingEnabled"].as<bool>();
+                if (!wasEnabled && enabledNow) {
+                    Serial.println("[RTDB Stream] pH dosing switched ON — evaluating automation");
+                    autoTriggered = true;
+                    extern volatile bool commandsChangedViaStream;
+                    commandsChangedViaStream = true;
+                }
+            }
+        }
 
         applyManualIfNeeded();
     } else {
@@ -855,6 +888,10 @@ void onRTDBStream(AsyncResult &result) {
         if (!doc["heater"].isNull()) {
             JsonDocument obj; obj.set(doc["heater"]);
             processPatchEvent("/heater", obj, currentCommands, hasChanges);
+        }
+        if (!doc["phDosing"].isNull()) {
+            JsonDocument obj; obj.set(doc["phDosing"]);
+            processPatchEvent("/phDosing", obj, currentCommands, hasChanges);
         }
         applyManualIfNeeded();
     }

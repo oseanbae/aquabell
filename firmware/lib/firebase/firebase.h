@@ -12,6 +12,11 @@ struct CommandState {
     bool value;
 };
 
+struct PhDosingCommandState {
+    bool phDosingEnabled;
+    bool value;
+};
+
 struct Commands {
     CommandState fan;
     CommandState light;
@@ -19,6 +24,7 @@ struct Commands {
     CommandState valve;
     CommandState cooler;
     CommandState heater;
+    PhDosingCommandState phDosing;
 };
 
 void pushToRTDBLive(const RealTimeData &data, const bool updatedSensors[6]);

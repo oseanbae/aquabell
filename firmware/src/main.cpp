@@ -15,11 +15,11 @@
 #include "time_utils.h"
 
 // === CONSTANTS ===
-#define USE_DHT_MOCK true
+#define USE_DHT_MOCK false
 #define USE_PH_MOCK true
 #define USE_DO_MOCK true
-#define USE_TURBIDITY_MOCK true
-#define USE_WATERTEMP_MOCK true
+#define USE_TURBIDITY_MOCK false
+#define USE_WATERTEMP_MOCK false
 #define USE_FLOATSWITCH_MOCK true
 
 // === GLOBAL STATES ===
@@ -32,7 +32,8 @@ Commands currentCommands = {
     {true, false}, // pump
     {true, false}, // valve
     {true, false}, // cooler
-    {true, false}  // heater
+    {true, false}, // heater
+    {true, false}  // pH dosing (enabled flag, current activity)
 };
 
 // === FLAGS & TIMERS ===
@@ -44,6 +45,8 @@ unsigned long lastRelaySync = 0;
 void initAllModules();
 bool readSensorsMultiInterval(unsigned long now, RealTimeData &data, bool updatedSensors[5]);
 void connectWiFi();
+float read_ph_mock();
+float read_do_mock();
 
 // === UTILS ===
 void displaySensorReading(const char* label, float value, const char* unit) {
@@ -167,7 +170,11 @@ void loop() {
             if (wifiUp) {
                 applyRulesWithModeControl(current, actuators, currentCommands, nowMillis);
             } else {
-                Commands defaultAuto = { {true,false}, {true,false}, {true,false}, {true,false}, {true,false}, {true,false} };
+                Commands defaultAuto = {
+                    {true,false}, {true,false}, {true,false},
+                    {true,false}, {true,false}, {true,false},
+                    {true,false}
+                };
                 applyRulesWithModeControl(current, actuators, defaultAuto, nowMillis);
             }
 
@@ -272,7 +279,7 @@ bool readSensorsMultiInterval(unsigned long now, RealTimeData &data, bool update
 
     // --- pH ---
     if (now - lastRead[1] >= intervals[1]) {
-        float ph = USE_PH_MOCK ? 0.0 : read_ph(data.waterTemp);
+        float ph = USE_PH_MOCK ? 6.9 : read_ph(data.waterTemp);
         if (!isnan(ph) && ph > -2.0f && ph < 16.0f) {
             data.pH = ph;
             updatedSensors[1] = true;
@@ -328,40 +335,40 @@ bool readSensorsMultiInterval(unsigned long now, RealTimeData &data, bool update
 }
 
 
-// float read_ph_mock() {
-//     static float mockPH = 7.0f;
-//     static unsigned long lastUpdate = 0;
+float read_ph_mock() {
+    static float mockPH = 7.0f;
+    static unsigned long lastUpdate = 0;
 
-//     unsigned long now = millis();
-//     if (now - lastUpdate > 10000) {  // update every 10s
-//         // Random small drift up/down
-//         float drift = ((float)random(-5, 6)) / 100.0f; // -0.05 to +0.05
-//         mockPH += drift;
+    unsigned long now = millis();
+    if (now - lastUpdate > 10000) {  // update every 10s
+        // Random small drift up/down
+        float drift = ((float)random(-5, 6)) / 100.0f; // -0.05 to +0.05
+        mockPH += drift;
 
-//         // Clamp to safe range 6.5–7.5
-//         if (mockPH < 6.5f) mockPH = 6.5f;
-//         if (mockPH > 8.0f) mockPH = 8.0f;
+        // Clamp to safe range 6.5–7.5
+        if (mockPH < 6.5f) mockPH = 6.5f;
+        if (mockPH > 8.0f) mockPH = 8.0f;
 
-//         lastUpdate = now;
-//     }
-//     return mockPH;
-// }
+        lastUpdate = now;
+    }
+    return mockPH;
+}
 
-// float read_do_mock() {
-//     static float mockDO = 6.5f;  // Start midrange (mg/L)
-//     static unsigned long lastUpdate = 0;
+float read_do_mock() {
+    static float mockDO = 6.5f;  // Start midrange (mg/L)
+    static unsigned long lastUpdate = 0;
 
-//     unsigned long now = millis();
-//     if (now - lastUpdate > 10000) {  // update every 10s
-//         // Small random drift up/down
-//         float drift = ((float)random(-10, 11)) / 100.0f;  // -0.10 to +0.10
-//         mockDO += drift;
+    unsigned long now = millis();
+    if (now - lastUpdate > 10000) {  // update every 10s
+        // Small random drift up/down
+        float drift = ((float)random(-10, 11)) / 100.0f;  // -0.10 to +0.10
+        mockDO += drift;
 
-//         // Clamp within realistic tilapia range (5.0–8.0 mg/L)
-//         if (mockDO < 5.0f) mockDO = 5.0f;
-//         if (mockDO > 8.0f) mockDO = 8.0f;
+        // Clamp within realistic tilapia range (5.0–8.0 mg/L)
+        if (mockDO < 5.0f) mockDO = 5.0f;
+        if (mockDO > 8.0f) mockDO = 8.0f;
 
-//         lastUpdate = now;
-//     }
-//     return mockDO;
-// }
+        lastUpdate = now;
+    }
+    return mockDO;
+}
