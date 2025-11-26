@@ -13,7 +13,7 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
 // Emergency fallback functions
 void checkValveLogic(ActuatorState& actuators, bool waterLevelLow, unsigned long nowMillis);
 void checkPumpLogic(ActuatorState& actuators, unsigned long nowMillis);
-void checkFanLogic(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis);
+void checkFanAndGrowLightLogic(ActuatorState& actuators, float airTemp, float humidity, unsigned long nowMillis);
 void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis);
 void checkCoolerLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);
 void checkHeaterLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);

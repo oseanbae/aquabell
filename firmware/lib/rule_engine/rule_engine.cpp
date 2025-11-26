@@ -183,7 +183,7 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     }
 
     // ===== 3. AUTO CONTROL RULES =====
-    if (actuators.fanAuto)   checkFanLogic(actuators, data.airTemp, data.airHumidity, nowMillis);
+    if (actuators.fanAuto)   checkFanAndGrowLightLogic(actuators, data.airTemp, data.airHumidity, nowMillis);
     if (actuators.lightAuto) checkLightLogic(actuators, nowMillis);
     if (actuators.pumpAuto)  checkPumpLogic(actuators, nowMillis);
     if (actuators.valveAuto) checkValveLogic(actuators, data.floatTriggered, nowMillis);
@@ -358,13 +358,13 @@ void checkPumpLogic(ActuatorState& actuators, unsigned long nowMillis) {
     }
 }
 
-void checkFanLogic(ActuatorState& actuators, float t, float h, unsigned long now) {
+void checkFanAndGrowLightLogic(ActuatorState& actuators, float t, float h, unsigned long now) {
     if (isnan(t) || isnan(h)) return;
 
     static unsigned long last = 0;
     const unsigned long DEBOUNCE = 5000;
 
-    // Auto re-enable sync
+    // Auto re-enable sync for fan
     if (actuators.fanAutoJustEnabled) {
         actuators.fanAutoJustEnabled = false;
         actuators.fan = (t >= TEMP_ON_THRESHOLD);
@@ -377,27 +377,55 @@ void checkFanLogic(ActuatorState& actuators, float t, float h, unsigned long now
 
     if (!actuators.fanAuto) return;
 
+    // --- Fan Logic ---
     bool tooHot = t >= TEMP_ON_THRESHOLD;          // 29C
     bool coolEnough = t <= TEMP_OFF_THRESHOLD;     // 26C
-    bool tooHumid = h >= HUMIDITY_MAX_THRESHOLD;   // 90%
-    bool dryEnough = h <= HUMIDITY_MIN_THRESHOLD;  // 80%
+    bool tooHumid = h >= HUMIDITY_MAX_THRESHOLD;   // 70%
+    bool dryEnough = h <= HUMIDITY_MIN_THRESHOLD;  // 60%
 
-    bool turnOn = tooHot || tooHumid;
-    bool turnOff = coolEnough && dryEnough;
+    bool turnOnFan = tooHot || tooHumid;
+    bool turnOffFan = coolEnough && dryEnough;
 
-    if (turnOn && !actuators.fan && now - last > DEBOUNCE) {
+    // Fan control logic
+    if (turnOnFan && !actuators.fan && now - last > DEBOUNCE) {
         actuators.fan = true;
         control_fan(true);
         last = now;
         Serial.printf("[RULE_ENGINE] Fan ON (T=%.1f, H=%.1f)\n", t, h);
     }
-    else if (turnOff && actuators.fan && now - last > DEBOUNCE) {
+    else if (turnOffFan && actuators.fan && now - last > DEBOUNCE) {
         actuators.fan = false;
         control_fan(false);
         last = now;
         Serial.printf("[RULE_ENGINE] Fan OFF (T=%.1f, H=%.1f)\n", t, h);    
     }
+
+    // --- Skip Light Control if it's Managed by the Schedule (checkLightLogic) ---
+    if (actuators.lightAuto && actuators.light) {
+        // Light is on due to schedule, skip grow light logic
+        Serial.println("[RULE_ENGINE] Skipping Grow Light Control - Light ON due to schedule");
+        return;
+    }
+
+    // --- Grow Light Control Logic based on Temperature Thresholds ---
+    bool turnOnGrowLight = t <= TEMP_LOW_THRESHOLD;     // Temperature below 18°C
+    bool turnOffGrowLight = t >= TEMP_HIGH_THRESHOLD;   // Temperature above 24°C
+
+    // Trigger grow light (only if it's not controlled by schedule)
+    if (turnOnGrowLight && !actuators.light && now - last > DEBOUNCE) {
+        actuators.light = true;
+        control_light(true);
+        last = now;
+        Serial.printf("[RULE_ENGINE] Grow Light ON (T=%.1f)\n", t);
+    }
+    else if (turnOffGrowLight && actuators.light && now - last > DEBOUNCE) {
+        actuators.light = false;
+        control_light(false);
+        last = now;
+        Serial.printf("[RULE_ENGINE] Grow Light OFF (T=%.1f)\n", t);    
+    }
 }
+
 
 void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis) {
     static bool prevLight = false;

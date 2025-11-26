@@ -55,6 +55,10 @@
 #define WATER_HEATER_RELAY_PIN    4
 #define PH_LOWERING_RELAY_PIN     27
 #define PH_RAISING_RELAY_PIN      15
+#define SUMP_PUMP_RELAY_PIN       12
+#define GROWBED_VALVE_RELAY_PIN   14
+#define DRAIN_PUMP_RELAY_PIN      13
+
 
 #define RELAY_SYNC_COOLDOWN       2000UL // Minimum time between relay state changes
 
@@ -63,6 +67,8 @@
 #define TEMP_OFF_THRESHOLD        26.9f // Temperature to turn OFF fan
 #define HUMIDITY_MAX_THRESHOLD    70.1f // Humidity to turn ON fan
 #define HUMIDITY_MIN_THRESHOLD    60.0f // Humidity to turn OFF fan
+#define TEMP_LOW_THRESHOLD        18.0f // Temperature to turn ON heater
+#define TEMP_HIGH_THRESHOLD       24.0f // Temperature to turn OFF heater
 
 // Water Temperature (Cooler/Heater)
 #define COOLER_ON_TEMP            29.0f // Temperature to turn ON cooler
@@ -93,9 +99,14 @@
 #define PH_REST_PERIOD_MS         300000UL // 5 minutes
 #define PH_MAX_DOSING_ATTEMPTS    3 // Max attempts before forcing a rest period
 
-// WiFi Credentials
-// #define WIFI_SSID                 "OPPO A54"
-// #define WIFI_PASS                 "12345678"
+// Drain Pump Control
+#define DO_LOW_THRESHOLD          4.0f
+#define DRAIN_PUMP_DURATION_MS    30000UL // 30 seconds
 
-#define WIFI_SSID                 "POCO X6 Pro 5G"
-#define WIFI_PASS                 "feykfrend"
+// Sump Pump Control
+#define TURBIDITY_HIGH_THRESHOLD  400.0f // NTU
+#define SUMP_PUMP_DURATION_MS     30000UL // 30 seconds
+
+// WiFi Credentials
+#define WIFI_SSID                 "meow"
+#define WIFI_PASS                 "helloworld2025"
