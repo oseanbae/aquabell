@@ -20,7 +20,7 @@
 #define USE_DO_MOCK true
 #define USE_TURBIDITY_MOCK false
 #define USE_WATERTEMP_MOCK false
-#define USE_FLOATSWITCH_MOCK true
+#define USE_FLOATSWITCH_MOCK false
 
 // === GLOBAL STATES ===
 RealTimeData current = {};
@@ -245,7 +245,7 @@ void initAllModules() {
     temp_sensor_init();
     ph_sensor_init();
     do_sensor_init();
-    turbidity_sensor_init();
+    turbidity_sensor_init();    
     dht_sensor_init();
     float_switch_init();
     relay_control_init(); 
@@ -279,7 +279,7 @@ bool readSensorsMultiInterval(unsigned long now, RealTimeData &data, bool update
 
     // --- pH ---
     if (now - lastRead[1] >= intervals[1]) {
-        float ph = USE_PH_MOCK ? 6.9 : read_ph(data.waterTemp);
+        float ph = USE_PH_MOCK ? read_ph_mock(): read_ph(data.waterTemp);
         if (!isnan(ph) && ph > -2.0f && ph < 16.0f) {
             data.pH = ph;
             updatedSensors[1] = true;
@@ -290,7 +290,7 @@ bool readSensorsMultiInterval(unsigned long now, RealTimeData &data, bool update
 
     // --- Dissolved Oxygen ---
     if (now - lastRead[2] >= intervals[2]) {
-        float doValue = USE_DO_MOCK ? 7.5 : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
+        float doValue = USE_DO_MOCK ? read_do_mock() : read_dissolveOxygen(readDOVoltage(), data.waterTemp);
         if (!isnan(doValue) && doValue >= -5.0f && doValue < 25.0f) {
             data.dissolvedOxygen = doValue;
             updatedSensors[2] = true;
@@ -336,18 +336,16 @@ bool readSensorsMultiInterval(unsigned long now, RealTimeData &data, bool update
 
 
 float read_ph_mock() {
-    static float mockPH = 7.0f;
+    static float mockPH = 7.2f;
     static unsigned long lastUpdate = 0;
 
     unsigned long now = millis();
-    if (now - lastUpdate > 10000) {  // update every 10s
-        // Random small drift up/down
-        float drift = ((float)random(-5, 6)) / 100.0f; // -0.05 to +0.05
+    if (now - lastUpdate > 45000) {  // update every 30 s
+        float drift = ((float)random(-2, 3)) / 1000.0f;  // -0.002 to +0.003
         mockPH += drift;
 
-        // Clamp to safe range 6.5–7.5
-        if (mockPH < 6.5f) mockPH = 6.5f;
-        if (mockPH > 8.0f) mockPH = 8.0f;
+        if (mockPH < 6.3f) mockPH = 6.3f;
+        if (mockPH > 7.8f) mockPH = 7.8f;
 
         lastUpdate = now;
     }
@@ -359,7 +357,7 @@ float read_do_mock() {
     static unsigned long lastUpdate = 0;
 
     unsigned long now = millis();
-    if (now - lastUpdate > 10000) {  // update every 10s
+    if (now - lastUpdate > 30000) {  // update every 30s
         // Small random drift up/down
         float drift = ((float)random(-10, 11)) / 100.0f;  // -0.10 to +0.10
         mockDO += drift;
