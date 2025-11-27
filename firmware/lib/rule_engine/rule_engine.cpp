@@ -54,10 +54,12 @@ void evaluateRules(bool forceImmediate) {
 
 
 // --- MAIN ENTRY ---
-void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, const Commands& commands, unsigned long nowMillis) {
+void applyRulesWithModeControl(RealTimeData& data,
+    ActuatorState& actuators,
+    const Commands& commands,
+    unsigned long nowMillis) {
     Serial.println("[RULE_ENGINE] Applying mode-aware rules");
 
-    // If emergency active, skip normal rules (emergency already applied)
     if (actuators.emergencyMode) {
         Serial.println("[RULE_ENGINE] 🔒 Emergency active — skipping AUTO/MANUAL logic");
         return;
@@ -132,7 +134,7 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
         }
     }
 
-    // --- WATER COOLER ---
+    // --- COOLER ---
     if (!commands.cooler.isAuto) {
         actuators.coolerAuto = false;
         actuators.cooler = commands.cooler.value;
@@ -145,7 +147,7 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
         }
     }
 
-    // --- WATER HEATER ---
+    // --- HEATER ---
     if (!commands.heater.isAuto) {
         actuators.heaterAuto = false;
         actuators.heater = commands.heater.value;
@@ -158,7 +160,7 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
         }
     }
 
-    // --- PH DOSING SAFETY ---
+    // --- PH DOSING ---
     if (!commands.phDosing.phDosingEnabled) {
         if (actuators.phDosingEnabled) {
             Serial.println("[RULE_ENGINE] 🧪 pH dosing DISABLED via RTDB — halting automation");
@@ -182,6 +184,35 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
         }
     }
 
+    // ===== 2a. MANUAL DRAIN LOGIC =====
+    static bool manualDrainActive = false;
+    static unsigned long manualDrainStart = 0;
+
+    // Start manual drain
+    if (commands.waterChange.manualChangeRequest && !manualDrainActive) {
+        manualDrainActive = true;
+        manualDrainStart = nowMillis;
+        actuators.waterChange = true;
+        control_drain(true);
+        Serial.println("[MANUAL] Manual water change requested — starting drain cycle");
+    }
+
+    // Cancel manual drain
+    if (manualDrainActive && commands.waterChange.manualChangeCancel) {
+        actuators.waterChange = false;
+        control_drain(false);
+        manualDrainActive = false;
+        Serial.println("[MANUAL] Manual water change canceled by user");
+    }
+
+    // Stop after duration
+    if (manualDrainActive && (nowMillis - manualDrainStart >= DO_DRAIN_DURATION_MS)) {
+        actuators.waterChange = false;
+        control_drain(false);
+        manualDrainActive = false;
+        Serial.println("[MANUAL] Manual drain cycle complete");
+    }
+
     // ===== 3. AUTO CONTROL RULES =====
     if (actuators.fanAuto)   checkFanAndGrowLightLogic(actuators, data.airTemp, data.airHumidity, nowMillis);
     if (actuators.lightAuto) checkLightLogic(actuators, nowMillis);
@@ -189,6 +220,11 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     if (actuators.valveAuto) checkValveLogic(actuators, data.floatTriggered, nowMillis);
     if (actuators.coolerAuto) checkCoolerLogic(actuators, data.waterTemp, nowMillis);
     if (actuators.heaterAuto) checkHeaterLogic(actuators, data.waterTemp, nowMillis);
+
+    // Only run auto DO logic if no manual drain active
+    if (!manualDrainActive && actuators.waterChangeAuto) {
+        checkWaterChangeLogic(actuators, commands, data.dissolvedOxygen, nowMillis);
+    }
 
     // ===== 4. APPLY FINAL STATES =====
     control_fan(actuators.fan);
@@ -198,31 +234,21 @@ void applyRulesWithModeControl(RealTimeData& data, ActuatorState& actuators, con
     control_cooler(actuators.cooler);
     control_heater(actuators.heater);
 
-    // reflect to global current so syncRelayState uses the actual actuators state
     extern RealTimeData current;
     current.relayStates.fan       = actuators.fan;
     current.relayStates.light     = actuators.light;
     current.relayStates.waterPump = actuators.pump;
     current.relayStates.valve     = actuators.valve;
-    current.relayStates.cooler = actuators.cooler;
-    current.relayStates.heater = actuators.heater;
-    // Note: pH pump states are reflected in evaluateRules() since it runs independently
+    current.relayStates.cooler    = actuators.cooler;
+    current.relayStates.heater    = actuators.heater;
 
-    Serial.printf("[RULE_ENGINE] Final states - Fan:%s(%s) Light:%s(%s) Pump:%s(%s) Valve:%s(%s) Cooler:%s(%s)\n Heater:%s(%s)\n",
+    Serial.printf("[RULE_ENGINE] Final states - Fan:%s(%s) Light:%s(%s) Pump:%s(%s) Valve:%s(%s) Cooler:%s(%s) Heater:%s(%s)\n",
                   actuators.fan ? "ON" : "OFF", actuators.fanAuto ? "AUTO" : "MANUAL",
                   actuators.light ? "ON" : "OFF", actuators.lightAuto ? "AUTO" : "MANUAL",
                   actuators.pump ? "ON" : "OFF", actuators.pumpAuto ? "AUTO" : "MANUAL",
                   actuators.valve ? "ON" : "OFF", actuators.valveAuto ? "AUTO" : "MANUAL",
                   actuators.cooler ? "ON" : "OFF", actuators.coolerAuto ? "AUTO" : "MANUAL",
                   actuators.heater ? "ON" : "OFF", actuators.heaterAuto ? "AUTO" : "MANUAL");
-
-    // // Reset re-enable flags after evaluation
-    // actuators.fanAutoJustEnabled   = false;
-    // actuators.lightAutoJustEnabled = false;
-    // actuators.pumpAutoJustEnabled  = false;
-    // actuators.valveAutoJustEnabled = false;
-    // actuators.coolerAutoJustEnabled = false;
-    // actuators.heaterAutoJustEnabled = false;
 
     // Update previous state trackers
     prevFanAuto   = commands.fan.isAuto;
@@ -425,7 +451,6 @@ void checkFanAndGrowLightLogic(ActuatorState& actuators, float t, float h, unsig
         Serial.printf("[RULE_ENGINE] Grow Light OFF (T=%.1f)\n", t);    
     }
 }
-
 
 void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis) {
     static bool prevLight = false;
@@ -643,5 +668,127 @@ void checkpHPumpLogic(ActuatorState &actuators, float phValue, unsigned long now
         Serial.println("[AUTO PH] ⚠️ Too many consecutive doses. Forcing rest period.");
         dosingAttempts = 0;
         lastDoseEnd = nowMillis; // enforce rest
+    }
+}
+
+void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, float doValue, unsigned long nowMillis) {
+    if (isnan(doValue)) return;
+
+    static bool manualDrainActive = false;
+    static unsigned long manualDrainStart = 0;
+    static bool refillActive = false;
+    static unsigned long refillStart = 0;
+    static bool prevDrainState = false;
+    static bool prevValveState = false;
+    static unsigned long lowSince = 0;
+    static bool intentPrinted = false;
+    static unsigned long lastDrainTs = 0;
+
+    // --- Sync on AUTO re-enable ---
+    if (actuators.waterChangeAutoJustEnabled) {
+        actuators.waterChangeAutoJustEnabled = false;
+        manualDrainActive = false;
+        refillActive = false;
+        lowSince = 0;
+        intentPrinted = false;
+        lastDrainTs = 0;
+        Serial.println("[RULE_ENGINE] ♻️ Drain AUTO re-enabled — timers reset");
+    }
+
+    // --- MANUAL DRAIN START ---
+    if (commands.waterChange.manualChangeRequest && !manualDrainActive && !actuators.pump) {
+        manualDrainActive = true;
+        manualDrainStart = nowMillis;
+        actuators.waterChange = true;
+        actuators.valve = false;  // Ensure valve is closed during drain
+        refillActive = false;
+        control_drain(true);
+        control_valve(false);
+        Serial.println("[MANUAL] Manual water change requested — starting drain cycle");
+    }
+
+    // --- MANUAL DRAIN CANCEL ---
+    if (manualDrainActive && commands.waterChange.manualChangeCancel) {
+        actuators.waterChange = false;
+        control_drain(false);
+        manualDrainActive = false;
+        refillActive = false;
+        Serial.println("[MANUAL] Manual water change canceled by user");
+    }
+
+    // --- MANUAL DRAIN AUTO STOP / START REFILL ---
+    if (manualDrainActive && (nowMillis - manualDrainStart >= DO_DRAIN_DURATION_MS)) {
+        actuators.waterChange = false;
+        control_drain(false);
+        manualDrainActive = false;
+        refillActive = true;
+        refillStart = nowMillis;
+        actuators.valve = true;  // open valve for refill
+        control_valve(true);
+        Serial.println("[MANUAL] Manual drain cycle complete — starting refill");
+    }
+
+    // --- AUTO REFILL LOGIC ---
+    if (refillActive) {
+        // Pause refill if growbed pump is running
+        if (actuators.pump) {
+            actuators.valve = false;
+            control_valve(false);
+            Serial.println("[MANUAL] Refill paused — growbed pump active");
+        } else {
+            actuators.valve = true;
+            control_valve(true);
+            // Stop refill if water level high or max refill time exceeded
+            if (nowMillis - refillStart >= MAX_REFILL_MS) {
+                actuators.valve = false;
+                control_valve(false);
+                refillActive = false;
+                Serial.println("[MANUAL] Refill complete — valve closed");
+            }
+        }
+    }
+
+    // --- AUTO DO DRAIN (if no manual drain or refill) ---
+    if (!manualDrainActive && !refillActive && actuators.waterChangeAuto) {
+        if (doValue <= DO_LOW_THRESHOLD) {
+            if (lowSince == 0) lowSince = nowMillis;
+            if (!intentPrinted && !actuators.waterChange) {
+                Serial.printf("[RULE_ENGINE] [INTENT] DO low (%.2f mg/L) — drain about to run\n", doValue);
+                intentPrinted = true;
+            }
+        } else {
+            lowSince = 0;
+            intentPrinted = false;
+        }
+
+        bool lowStable = (lowSince > 0) && (nowMillis - lowSince >= DO_LOW_DEBOUNCE_MS);
+
+        if (lowStable && !actuators.waterChange && !actuators.pump) { // check growbed pump
+            actuators.waterChange = true;
+            lastDrainTs = nowMillis;
+            Serial.printf("[RULE_ENGINE] ♻️ Drain ON — DO critically low (%.2f mg/L)\n", doValue);
+            control_drain(true);
+        }
+
+        // Stop after duration
+        if (actuators.waterChange && (nowMillis - lastDrainTs >= DO_DRAIN_DURATION_MS)) {
+            actuators.waterChange = false;
+            lastDrainTs = nowMillis;
+            lowSince = 0;
+            intentPrinted = false;
+            Serial.println("[RULE_ENGINE] ♻️ Drain OFF — cycle complete");
+            control_drain(false);
+        }
+    }
+
+    // --- APPLY RELAYS ---
+    if (actuators.waterChange != prevDrainState) {
+        control_drain(actuators.waterChange);
+        prevDrainState = actuators.waterChange;
+    }
+
+    if (actuators.valve != prevValveState) {
+        control_valve(actuators.valve);
+        prevValveState = actuators.valve;
     }
 }

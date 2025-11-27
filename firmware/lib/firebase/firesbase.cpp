@@ -486,6 +486,7 @@ bool fetchControlCommands() {
         }
     };
 
+    // Existing actuators
     handleActuator("fan", currentCommands.fan, control_fan);
     handleActuator("light", currentCommands.light, control_light);
     handleActuator("pump", currentCommands.pump, control_pump);
@@ -493,24 +494,40 @@ bool fetchControlCommands() {
     handleActuator("cooler", currentCommands.cooler, control_cooler);
     handleActuator("heater", currentCommands.heater, control_heater);
 
+    // pH dosing
     if (!doc["phDosing"].isNull()) {
         JsonObject phObj = doc["phDosing"].as<JsonObject>();
         if (!phObj.isNull()) {
-            if (!phObj["phDosingEnabled"].isNull()) {
-                currentCommands.phDosing.phDosingEnabled = phObj["phDosingEnabled"].as<bool>();
-            }
-            if (!phObj["value"].isNull()) {
-                currentCommands.phDosing.value = phObj["value"].as<bool>();
-            }
+            if (!phObj["phDosingEnabled"].isNull()) currentCommands.phDosing.phDosingEnabled = phObj["phDosingEnabled"].as<bool>();
+            if (!phObj["value"].isNull()) currentCommands.phDosing.value = phObj["value"].as<bool>();
             Serial.printf("[Control] phDosing enabled=%s value=%s\n",
                           currentCommands.phDosing.phDosingEnabled ? "true" : "false",
                           currentCommands.phDosing.value ? "true" : "false");
         }
     }
 
+    // === Manual Water Change ===
+    if (!doc["waterChange"].isNull()) {
+        JsonObject wcObj = doc["waterChange"].as<JsonObject>();
+        if (!wcObj.isNull()) {
+            if (!wcObj["manualChangeRequest"].isNull()) {
+                currentCommands.waterChange.manualChangeRequest = wcObj["manualChangeRequest"].as<bool>();
+            }
+            if (!wcObj["manualChangeCancel"].isNull()) {
+                currentCommands.waterChange.manualChangeCancel = wcObj["manualChangeCancel"].as<bool>();
+            }
+            if (currentCommands.waterChange.manualChangeRequest || currentCommands.waterChange.manualChangeCancel) {
+                anyManualControl = true;
+                Serial.printf("[Control] Water change request=%s cancel=%s\n",
+                              currentCommands.waterChange.manualChangeRequest ? "true" : "false",
+                              currentCommands.waterChange.manualChangeCancel ? "true" : "false");
+            }
+        }
+    }
+
     if (anyManualControl) {
-        Serial.println("[Control] Applied manual relay states.");
-        return true; // manual control was applied
+        Serial.println("[Control] Applied manual relay states including water change.");
+        return true; // manual control applied
     }
 
     // No manual controls found, rule engine should take over
@@ -542,13 +559,16 @@ void syncRelayState(const RealTimeData &data, const Commands &commands) {
     if (commands.light.isAuto)  doc["light/value"] = data.relayStates.light;
     if (commands.pump.isAuto)   doc["pump/value"] = data.relayStates.waterPump;
     if (commands.valve.isAuto)  doc["valve/value"] = data.relayStates.valve;
-    if (commands.cooler.isAuto)  doc["cooler/value"] = data.relayStates.cooler;
-    if (commands.heater.isAuto)  doc["heater/value"] = data.relayStates.heater;
+    if (commands.cooler.isAuto) doc["cooler/value"] = data.relayStates.cooler;
+    if (commands.heater.isAuto) doc["heater/value"] = data.relayStates.heater;
 
     bool phActive = data.relayStates.phRaising || data.relayStates.phLowering;
-    bool shouldSyncPh = (commands.phDosing.value != phActive);
-    if (shouldSyncPh) {
-        doc["phDosing/value"] = phActive;
+    if (commands.phDosing.value != phActive) doc["phDosing/value"] = phActive;
+
+    // Manual water change sync only clears request/cancel if handled
+    if (commands.waterChange.manualChangeRequest || commands.waterChange.manualChangeCancel) {
+        doc["waterChange/manualChangeRequest"] = false;
+        doc["waterChange/manualChangeCancel"] = false;
     }
 
     if (doc.size() == 0) return;  // Nothing to sync
@@ -567,10 +587,14 @@ void syncRelayState(const RealTimeData &data, const Commands &commands) {
 
     if (httpResponseCode == 200) {
         Serial.println("[RTDB] Relay sync ✅");
-        if (shouldSyncPh) {
+        if (commands.phDosing.value != phActive) {
             extern Commands currentCommands;
             currentCommands.phDosing.value = phActive;
         }
+        // Clear manual water change flags after successful sync
+        extern Commands currentCommands;
+        currentCommands.waterChange.manualChangeRequest = false;
+        currentCommands.waterChange.manualChangeCancel = false;
     } else {
         Serial.printf("[RTDB] Relay sync failed (%d)\n", httpResponseCode);
         initRetryState(url, payload, true);
@@ -715,7 +739,24 @@ void processPatchEvent(const String& dataPath, JsonDocument& patchData, Commands
             }
         }
     }
-
+    else if (dataPath == "/waterChange") {
+        if (!patchData["manualChangeRequest"].isNull()) {
+            bool enabled = patchData["manualChangeRequest"].as<bool>();
+            if (currentCommands.waterChange.manualChangeRequest != enabled) {
+                currentCommands.waterChange.manualChangeRequest = enabled;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Water Change enabled: %s\n", enabled ? "true" : "false");
+            }
+        }
+        if (!patchData["manualChangeCancel"].isNull()) {
+            bool waterChangeCancel = patchData["manualChangeCancel"].as<bool>();
+            if (currentCommands.waterChange.manualChangeCancel != waterChangeCancel) {
+                currentCommands.waterChange.manualChangeCancel = waterChangeCancel;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] pH dosing value: %s\n", waterChangeCancel ? "true" : "false");
+            }
+        }
+    }
     
     else {
         Serial.printf("[RTDB Stream] Unknown path: %s\n", dataPath.c_str());
@@ -799,6 +840,16 @@ void onRTDBStream(AsyncResult &result) {
             control_heater(currentCommands.heater.value);
             Serial.printf("[RTDB Stream] Manual WATER_HEATER applied: %s\n", currentCommands.heater.value ? "ON" : "OFF");
         }
+
+        // === MANUAL WATER CHANGE ===
+        if (currentCommands.waterChange.manualChangeRequest) {
+            Serial.println("[RTDB Stream] Manual water change REQUEST detected");
+            // You can trigger drain pump here if desired in your rule engine
+        }
+        if (currentCommands.waterChange.manualChangeCancel) {
+            Serial.println("[RTDB Stream] Manual water change CANCEL detected");
+            // You can cancel drain pump here if desired in your rule engine
+        }
     };
 
     // PATCH or SNAPSHOT handling (same as your original)
@@ -839,13 +890,13 @@ void onRTDBStream(AsyncResult &result) {
             }
         };
 
-
         handleActuator("fan");
         handleActuator("light");
         handleActuator("pump");
         handleActuator("valve");
         handleActuator("cooler");
         handleActuator("heater");
+
         if (changedPath.startsWith("/phDosing")) {
             bool wasEnabled = currentCommands.phDosing.phDosingEnabled;
             JsonDocument obj;
@@ -862,37 +913,36 @@ void onRTDBStream(AsyncResult &result) {
             }
         }
 
+        // === WATER CHANGE PATCH HANDLING ===
+        if (changedPath.startsWith("/waterChange")) {
+            JsonDocument obj;
+            obj.set(changedData);
+            if (!obj["manualChangeRequest"].isNull()) currentCommands.waterChange.manualChangeRequest = obj["manualChangeRequest"].as<bool>();
+            if (!obj["manualChangeCancel"].isNull()) currentCommands.waterChange.manualChangeCancel = obj["manualChangeCancel"].as<bool>();
+            if (currentCommands.waterChange.manualChangeRequest) Serial.println("[RTDB Stream] Manual water change REQUEST detected via stream");
+            if (currentCommands.waterChange.manualChangeCancel) Serial.println("[RTDB Stream] Manual water change CANCEL detected via stream");
+        }
+
         applyManualIfNeeded();
     } else {
         // Snapshot handling
-        if (!doc["fan"].isNull()) {
-            JsonDocument obj; obj.set(doc["fan"]);
-            processPatchEvent("/fan", obj, currentCommands, hasChanges);
+        if (!doc["fan"].isNull()) { JsonDocument obj; obj.set(doc["fan"]); processPatchEvent("/fan", obj, currentCommands, hasChanges); }
+        if (!doc["light"].isNull()) { JsonDocument obj; obj.set(doc["light"]); processPatchEvent("/light", obj, currentCommands, hasChanges); }
+        if (!doc["pump"].isNull()) { JsonDocument obj; obj.set(doc["pump"]); processPatchEvent("/pump", obj, currentCommands, hasChanges); }
+        if (!doc["valve"].isNull()) { JsonDocument obj; obj.set(doc["valve"]); processPatchEvent("/valve", obj, currentCommands, hasChanges); }
+        if (!doc["cooler"].isNull()) { JsonDocument obj; obj.set(doc["cooler"]); processPatchEvent("/cooler", obj, currentCommands, hasChanges); }
+        if (!doc["heater"].isNull()) { JsonDocument obj; obj.set(doc["heater"]); processPatchEvent("/heater", obj, currentCommands, hasChanges); }
+        if (!doc["phDosing"].isNull()) { JsonDocument obj; obj.set(doc["phDosing"]); processPatchEvent("/phDosing", obj, currentCommands, hasChanges); }
+
+        // === WATER CHANGE SNAPSHOT HANDLING ===
+        if (!doc["waterChange"].isNull()) {
+            JsonDocument obj; obj.set(doc["waterChange"]);
+            if (!obj["manualChangeRequest"].isNull()) currentCommands.waterChange.manualChangeRequest = obj["manualChangeRequest"].as<bool>();
+            if (!obj["manualChangeCancel"].isNull()) currentCommands.waterChange.manualChangeCancel = obj["manualChangeCancel"].as<bool>();
+            if (currentCommands.waterChange.manualChangeRequest) Serial.println("[RTDB Stream] Manual water change REQUEST detected via snapshot");
+            if (currentCommands.waterChange.manualChangeCancel) Serial.println("[RTDB Stream] Manual water change CANCEL detected via snapshot");
         }
-        if (!doc["light"].isNull()) {
-            JsonDocument obj; obj.set(doc["light"]);
-            processPatchEvent("/light", obj, currentCommands, hasChanges);
-        }
-        if (!doc["pump"].isNull()) {
-            JsonDocument obj; obj.set(doc["pump"]);
-            processPatchEvent("/pump", obj, currentCommands, hasChanges);
-        }
-        if (!doc["valve"].isNull()) {
-            JsonDocument obj; obj.set(doc["valve"]);
-            processPatchEvent("/valve", obj, currentCommands, hasChanges);
-        }
-        if (!doc["cooler"].isNull()) {
-            JsonDocument obj; obj.set(doc["cooler"]);
-            processPatchEvent("/cooler", obj, currentCommands, hasChanges);
-        }
-        if (!doc["heater"].isNull()) {
-            JsonDocument obj; obj.set(doc["heater"]);
-            processPatchEvent("/heater", obj, currentCommands, hasChanges);
-        }
-        if (!doc["phDosing"].isNull()) {
-            JsonDocument obj; obj.set(doc["phDosing"]);
-            processPatchEvent("/phDosing", obj, currentCommands, hasChanges);
-        }
+
         applyManualIfNeeded();
     }
 
@@ -923,13 +973,14 @@ void onRTDBStream(AsyncResult &result) {
         snapshot.relayStates.light     = actuators.light;
         snapshot.relayStates.waterPump = actuators.pump;
         snapshot.relayStates.valve     = actuators.valve;
-        snapshot.relayStates.cooler= actuators.cooler;
-        snapshot.relayStates.heater= actuators.heater;
+        snapshot.relayStates.cooler    = actuators.cooler;
+        snapshot.relayStates.heater    = actuators.heater;
 
         syncRelayState(snapshot, currentCommands);
         Serial.println("[RTDB Stream] Immediate sync completed.");
     }
 }
+
 
 // Initialize and start the Firebase RTDB stream (token-aware)
 void startFirebaseStream() {

@@ -33,7 +33,8 @@ Commands currentCommands = {
     {true, false}, // valve
     {true, false}, // cooler
     {true, false}, // heater
-    {true, false}  // pH dosing (enabled flag, current activity)
+    {true, false},  // pH dosing (enabled flag, current activity)
+    {false, false}  // water change (startDrain, cancelDrain)
 };
 
 // === FLAGS & TIMERS ===
@@ -173,7 +174,7 @@ void loop() {
                 Commands defaultAuto = {
                     {true,false}, {true,false}, {true,false},
                     {true,false}, {true,false}, {true,false},
-                    {true,false}
+                    {true,false}, {false,false}
                 };
                 applyRulesWithModeControl(current, actuators, defaultAuto, nowMillis);
             }

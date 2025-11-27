@@ -17,6 +17,11 @@ struct PhDosingCommandState {
     bool value;
 };
 
+struct WaterChangeCommands {
+    bool manualChangeRequest;
+    bool manualChangeCancel;
+};
+
 struct Commands {
     CommandState fan;
     CommandState light;
@@ -25,6 +30,7 @@ struct Commands {
     CommandState cooler;
     CommandState heater;
     PhDosingCommandState phDosing;
+    WaterChangeCommands waterChange;
 };
 
 void pushToRTDBLive(const RealTimeData &data, const bool updatedSensors[6]);

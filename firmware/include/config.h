@@ -100,8 +100,12 @@
 #define PH_MAX_DOSING_ATTEMPTS    3 // Max attempts before forcing a rest period
 
 // Drain Pump Control
-#define DO_LOW_THRESHOLD          4.0f
-#define DRAIN_PUMP_DURATION_MS    30000UL // 30 seconds
+// === DO Trigger Thresholds ===
+#define DO_LOW_THRESHOLD              4.0f       // mg/L emergency
+#define DO_LOW_DEBOUNCE_MS            5000UL     // 5s stable low
+#define DO_DRAIN_DURATION_MS          (2UL * 60UL * 1000UL)  // 2 minutes
+#define DO_COOLDOWN_MS                (30UL * 60UL * 1000UL) // 30 min cooldown
+#define MAX_REFILL_MS                 (2UL * 60UL * 1000UL) // 2 min max refill
 
 // Sump Pump Control
 #define TURBIDITY_HIGH_THRESHOLD  400.0f // NTU

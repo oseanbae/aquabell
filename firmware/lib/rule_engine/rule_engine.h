@@ -18,6 +18,6 @@ void checkLightLogic(ActuatorState& actuators, unsigned long nowMillis);
 void checkCoolerLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);
 void checkHeaterLogic(ActuatorState& actuators, float waterTemp, unsigned long nowMillis);
 void checkpHPumpLogic(ActuatorState& actuators, float pH, unsigned long nowMillis);
-
+void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, float doValue, unsigned long nowMillis);
 // Main rule evaluation entry point
 void evaluateRules(bool forceImmediate = false);

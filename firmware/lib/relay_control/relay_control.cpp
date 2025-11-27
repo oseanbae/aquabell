@@ -13,7 +13,8 @@ const int RELAYS[] = {
     WATER_COOLER_RELAY_PIN,
     WATER_HEATER_RELAY_PIN,
     PH_LOWERING_RELAY_PIN,
-    PH_RAISING_RELAY_PIN
+    PH_RAISING_RELAY_PIN,
+    DRAIN_PUMP_RELAY_PIN
 };
 
 // === Init all relays ===
@@ -30,6 +31,7 @@ void relay_control_init() {
         else if (RELAYS[i] == VALVE_RELAY_PIN) actuators.valve = false;
         else if (RELAYS[i] == WATER_COOLER_RELAY_PIN) actuators.cooler = false;
         else if (RELAYS[i] == WATER_HEATER_RELAY_PIN) actuators.heater = false;
+        else if (RELAYS[i] == DRAIN_PUMP_RELAY_PIN) actuators.phLowering = false;
     }
 
     Serial.println("✅ Relay control initialized. All relays OFF.");
@@ -62,3 +64,4 @@ void control_ph_pump(bool up, bool down) {
     setRelay(PH_LOWERING_RELAY_PIN, down);
     setRelay(PH_RAISING_RELAY_PIN, up);
 }
+void control_drain(bool state) { setRelay(DRAIN_PUMP_RELAY_PIN, state); }
