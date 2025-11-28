@@ -55,8 +55,8 @@
 #define WATER_HEATER_RELAY_PIN    4
 #define PH_LOWERING_RELAY_PIN     27
 #define PH_RAISING_RELAY_PIN      15
-#define SUMP_PUMP_RELAY_PIN       12
-#define GROWBED_VALVE_RELAY_PIN   14
+#define DRAIN_VALVE_RELAY_PIN     12
+#define FLUSH_VALVE_RELAY_PIN     14
 #define DRAIN_PUMP_RELAY_PIN      13
 
 
@@ -108,8 +108,8 @@
 #define MAX_REFILL_MS                 (2UL * 60UL * 1000UL) // 2 min max refill
 
 // Sump Pump Control
-#define TURBIDITY_HIGH_THRESHOLD  400.0f // NTU
-#define SUMP_PUMP_DURATION_MS     30000UL // 30 seconds
+#define TURBIDITY_CLEAN_THRESHOLD   400.0f   // NTU level that triggers sump cleaning
+#define SUMP_CLEAN_DURATION_MS      30000UL // drain duration
 
 // WiFi Credentials
 #define WIFI_SSID                 "meow"

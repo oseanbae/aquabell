@@ -4,64 +4,69 @@
 
 extern ActuatorState actuators;
 
-// Relay pins array in same order as state fields
-const int RELAYS[] = {
-    FAN_RELAY_PIN,
-    LIGHT_RELAY_PIN,
-    PUMP_RELAY_PIN,
-    VALVE_RELAY_PIN,
-    WATER_COOLER_RELAY_PIN,
-    WATER_HEATER_RELAY_PIN,
-    PH_LOWERING_RELAY_PIN,
-    PH_RAISING_RELAY_PIN,
-    DRAIN_PUMP_RELAY_PIN
+// Struct to map relay → actuator boolean
+struct RelayMap {
+    int pin;
+    bool* statePtr;
 };
+
+// === Relay mapping table ===
+RelayMap RELAY_TABLE[] = {
+    { FAN_RELAY_PIN,              &actuators.fan },
+    { LIGHT_RELAY_PIN,            &actuators.light },
+    { PUMP_RELAY_PIN,             &actuators.pump },
+    { VALVE_RELAY_PIN,            &actuators.valve },
+    { WATER_COOLER_RELAY_PIN,     &actuators.cooler },
+    { WATER_HEATER_RELAY_PIN,     &actuators.heater },
+    { PH_LOWERING_RELAY_PIN,      &actuators.phLowering },
+    { PH_RAISING_RELAY_PIN,       &actuators.phRaising },
+    { DRAIN_PUMP_RELAY_PIN,       &actuators.waterChange },
+    { FLUSH_VALVE_RELAY_PIN,      &actuators.sumpWaterValve },
+    { DRAIN_VALVE_RELAY_PIN,      &actuators.sumpDrainValve },
+};
+
+const int RELAY_COUNT = sizeof(RELAY_TABLE) / sizeof(RELAY_TABLE[0]);
 
 // === Init all relays ===
 void relay_control_init() {
-    for (int i = 0; i < sizeof(RELAYS) / sizeof(RELAYS[0]); i++) {
-        pinMode(RELAYS[i], OUTPUT);
-        // Turn OFF all relays at startup. RELAYS MUST BE WIRES TO NO TERMIALS
-        digitalWrite(RELAYS[i], HIGH); //HIGH = OFF for active LOW relays, LOW = ON relay
-
-        // Set actuator state
-        if (RELAYS[i] == FAN_RELAY_PIN) actuators.fan = false;
-        else if (RELAYS[i] == LIGHT_RELAY_PIN) actuators.light = false;
-        else if (RELAYS[i] == PUMP_RELAY_PIN) actuators.pump = false;
-        else if (RELAYS[i] == VALVE_RELAY_PIN) actuators.valve = false;
-        else if (RELAYS[i] == WATER_COOLER_RELAY_PIN) actuators.cooler = false;
-        else if (RELAYS[i] == WATER_HEATER_RELAY_PIN) actuators.heater = false;
-        else if (RELAYS[i] == DRAIN_PUMP_RELAY_PIN) actuators.phLowering = false;
+    for (int i = 0; i < RELAY_COUNT; i++) {
+        pinMode(RELAY_TABLE[i].pin, OUTPUT);
+        digitalWrite(RELAY_TABLE[i].pin, HIGH);  // ACTIVE LOW: HIGH = OFF
+        *(RELAY_TABLE[i].statePtr) = false;
     }
 
     Serial.println("✅ Relay control initialized. All relays OFF.");
 }
 
-// === Relay control logic ===
+// === Unified relay control ===
 void setRelay(int relayPin, bool state) {
-    digitalWrite(relayPin, state ? LOW : HIGH); 
-    // if state == true → relayPin gets LOW (relay ON, since active LOW)
-    // if state == false → relayPin gets HIGH (relay OFF)
+    digitalWrite(relayPin, state ? LOW : HIGH);
 
-    if (relayPin == FAN_RELAY_PIN) actuators.fan = state;
-    else if (relayPin == PUMP_RELAY_PIN) actuators.pump = state;
-    else if (relayPin == LIGHT_RELAY_PIN) actuators.light = state;
-    else if (relayPin == VALVE_RELAY_PIN) actuators.valve = state;
-    else if (relayPin == WATER_COOLER_RELAY_PIN) actuators.cooler = state;
-    else if (relayPin == WATER_HEATER_RELAY_PIN) actuators.heater = state;
-    else if (relayPin == PH_LOWERING_RELAY_PIN) actuators.phLowering = state;
-    else if (relayPin == PH_RAISING_RELAY_PIN) actuators.phRaising = state;
+    for (int i = 0; i < RELAY_COUNT; i++) {
+        if (RELAY_TABLE[i].pin == relayPin) {
+            *(RELAY_TABLE[i].statePtr) = state;
+            break;
+        }
+    }
 }
 
-// === Component-specific wrappers ===
-void control_fan(bool state)   { setRelay(FAN_RELAY_PIN, state); }
-void control_light(bool state) { setRelay(LIGHT_RELAY_PIN, state); }
-void control_pump(bool state)  { setRelay(PUMP_RELAY_PIN, state); }
-void control_valve(bool state) { setRelay(VALVE_RELAY_PIN, state); }
-void control_cooler(bool state) { setRelay(WATER_COOLER_RELAY_PIN, state); }
-void control_heater(bool state) { setRelay(WATER_HEATER_RELAY_PIN, state); }
+// === Component wrappers ===
+void control_fan(bool s)               { setRelay(FAN_RELAY_PIN, s); }
+void control_light(bool s)             { setRelay(LIGHT_RELAY_PIN, s); }
+void control_pump(bool s)              { setRelay(PUMP_RELAY_PIN, s); }
+void control_valve(bool s)             { setRelay(VALVE_RELAY_PIN, s); }
+void control_cooler(bool s)            { setRelay(WATER_COOLER_RELAY_PIN, s); }
+void control_heater(bool s)            { setRelay(WATER_HEATER_RELAY_PIN, s); }
+
 void control_ph_pump(bool up, bool down) {
     setRelay(PH_LOWERING_RELAY_PIN, down);
     setRelay(PH_RAISING_RELAY_PIN, up);
 }
-void control_drain(bool state) { setRelay(DRAIN_PUMP_RELAY_PIN, state); }
+
+void control_drain(bool s)             { setRelay(DRAIN_PUMP_RELAY_PIN, s); }
+
+
+void control_sump_cleaning(bool waterValve, bool drainValve) {
+    setRelay(FLUSH_VALVE_RELAY_PIN, waterValve);
+    setRelay(DRAIN_VALVE_RELAY_PIN, drainValve);
+}

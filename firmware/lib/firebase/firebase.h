@@ -20,8 +20,14 @@ struct PhDosingCommandState {
 struct WaterChangeCommands {
     bool manualChangeRequest;
     bool manualChangeCancel;
+    bool inProgress = false;
 };
 
+struct SumpCleaningCommands {
+    bool manualCleanRequest;
+    bool manualCleanCancel;
+    bool inProgress = false;
+};
 struct Commands {
     CommandState fan;
     CommandState light;
@@ -31,6 +37,7 @@ struct Commands {
     CommandState heater;
     PhDosingCommandState phDosing;
     WaterChangeCommands waterChange;
+    SumpCleaningCommands sumpCleaning;
 };
 
 void pushToRTDBLive(const RealTimeData &data, const bool updatedSensors[6]);

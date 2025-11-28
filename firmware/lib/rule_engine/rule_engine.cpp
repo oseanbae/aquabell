@@ -56,7 +56,7 @@ void evaluateRules(bool forceImmediate) {
 // --- MAIN ENTRY ---
 void applyRulesWithModeControl(RealTimeData& data,
     ActuatorState& actuators,
-    const Commands& commands,
+    Commands& commands,
     unsigned long nowMillis) {
     Serial.println("[RULE_ENGINE] Applying mode-aware rules");
 
@@ -184,35 +184,6 @@ void applyRulesWithModeControl(RealTimeData& data,
         }
     }
 
-    // ===== 2a. MANUAL DRAIN LOGIC =====
-    static bool manualDrainActive = false;
-    static unsigned long manualDrainStart = 0;
-
-    // Start manual drain
-    if (commands.waterChange.manualChangeRequest && !manualDrainActive) {
-        manualDrainActive = true;
-        manualDrainStart = nowMillis;
-        actuators.waterChange = true;
-        control_drain(true);
-        Serial.println("[MANUAL] Manual water change requested — starting drain cycle");
-    }
-
-    // Cancel manual drain
-    if (manualDrainActive && commands.waterChange.manualChangeCancel) {
-        actuators.waterChange = false;
-        control_drain(false);
-        manualDrainActive = false;
-        Serial.println("[MANUAL] Manual water change canceled by user");
-    }
-
-    // Stop after duration
-    if (manualDrainActive && (nowMillis - manualDrainStart >= DO_DRAIN_DURATION_MS)) {
-        actuators.waterChange = false;
-        control_drain(false);
-        manualDrainActive = false;
-        Serial.println("[MANUAL] Manual drain cycle complete");
-    }
-
     // ===== 3. AUTO CONTROL RULES =====
     if (actuators.fanAuto)   checkFanAndGrowLightLogic(actuators, data.airTemp, data.airHumidity, nowMillis);
     if (actuators.lightAuto) checkLightLogic(actuators, nowMillis);
@@ -221,10 +192,9 @@ void applyRulesWithModeControl(RealTimeData& data,
     if (actuators.coolerAuto) checkCoolerLogic(actuators, data.waterTemp, nowMillis);
     if (actuators.heaterAuto) checkHeaterLogic(actuators, data.waterTemp, nowMillis);
 
-    // Only run auto DO logic if no manual drain active
-    if (!manualDrainActive && actuators.waterChangeAuto) {
-        checkWaterChangeLogic(actuators, commands, data.dissolvedOxygen, nowMillis);
-    }
+    // Water change and sump cleaning logic (handles both manual and auto internally)
+    checkWaterChangeLogic(actuators, commands, data.dissolvedOxygen, nowMillis);
+    checkSumpCleaningLogic(actuators, commands, data.turbidityNTU, nowMillis);
 
     // ===== 4. APPLY FINAL STATES =====
     control_fan(actuators.fan);
@@ -671,7 +641,7 @@ void checkpHPumpLogic(ActuatorState &actuators, float phValue, unsigned long now
     }
 }
 
-void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, float doValue, unsigned long nowMillis) {
+void checkWaterChangeLogic(ActuatorState& actuators, Commands& commands, float doValue, unsigned long nowMillis) {
     if (isnan(doValue)) return;
 
     static bool manualDrainActive = false;
@@ -692,6 +662,7 @@ void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, 
         lowSince = 0;
         intentPrinted = false;
         lastDrainTs = 0;
+        commands.waterChange.inProgress = false;
         Serial.println("[RULE_ENGINE] ♻️ Drain AUTO re-enabled — timers reset");
     }
 
@@ -702,6 +673,7 @@ void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, 
         actuators.waterChange = true;
         actuators.valve = false;  // Ensure valve is closed during drain
         refillActive = false;
+        commands.waterChange.inProgress = true;
         control_drain(true);
         control_valve(false);
         Serial.println("[MANUAL] Manual water change requested — starting drain cycle");
@@ -713,6 +685,7 @@ void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, 
         control_drain(false);
         manualDrainActive = false;
         refillActive = false;
+        commands.waterChange.inProgress = false;
         Serial.println("[MANUAL] Manual water change canceled by user");
     }
 
@@ -725,6 +698,7 @@ void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, 
         refillStart = nowMillis;
         actuators.valve = true;  // open valve for refill
         control_valve(true);
+        commands.waterChange.inProgress = true;
         Serial.println("[MANUAL] Manual drain cycle complete — starting refill");
     }
 
@@ -743,6 +717,7 @@ void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, 
                 actuators.valve = false;
                 control_valve(false);
                 refillActive = false;
+                commands.waterChange.inProgress = false;
                 Serial.println("[MANUAL] Refill complete — valve closed");
             }
         }
@@ -766,6 +741,7 @@ void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, 
         if (lowStable && !actuators.waterChange && !actuators.pump) { // check growbed pump
             actuators.waterChange = true;
             lastDrainTs = nowMillis;
+            commands.waterChange.inProgress = true;
             Serial.printf("[RULE_ENGINE] ♻️ Drain ON — DO critically low (%.2f mg/L)\n", doValue);
             control_drain(true);
         }
@@ -776,6 +752,7 @@ void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, 
             lastDrainTs = nowMillis;
             lowSince = 0;
             intentPrinted = false;
+            commands.waterChange.inProgress = false;
             Serial.println("[RULE_ENGINE] ♻️ Drain OFF — cycle complete");
             control_drain(false);
         }
@@ -790,5 +767,120 @@ void checkWaterChangeLogic( ActuatorState& actuators, const Commands& commands, 
     if (actuators.valve != prevValveState) {
         control_valve(actuators.valve);
         prevValveState = actuators.valve;
+    }
+}
+
+void checkSumpCleaningLogic(ActuatorState &actuators, Commands& commands,
+                            float turbidityNTU, unsigned long nowMillis)
+{
+    if (isnan(turbidityNTU)) return;
+
+    static bool manualCleaningActive = false;
+    static unsigned long manualCleaningStart = 0;
+
+    static unsigned long highSince = 0;
+    static unsigned long cleaningStart = 0;
+    static bool cleaningActive = false;
+    static bool intentPrinted = false;
+
+    //         AUTO RE-ENABLE RESET
+    if (actuators.sumpCleaningAutoJustEnabled) {
+        actuators.sumpCleaningAutoJustEnabled = false;
+
+        manualCleaningActive = false;
+        highSince = 0;
+        cleaningStart = 0;
+        cleaningActive = false;
+        intentPrinted = false;
+        commands.sumpCleaning.inProgress = false;
+
+        Serial.println("[SUMP] Auto re-enabled — timers reset");
+    }
+
+    //                   MANUAL START
+    if (commands.sumpCleaning.manualCleanRequest && !manualCleaningActive) {
+
+        Serial.println("[SUMP][MANUAL] Manual cleaning requested — starting");
+
+        manualCleaningActive = true;
+        manualCleaningStart = nowMillis;
+
+        actuators.sumpCleaning = true;
+        cleaningActive = false;         // disable auto cleaning
+        highSince = 0;
+        intentPrinted = false;
+        commands.sumpCleaning.inProgress = true;
+        control_sump_cleaning(true, true);   // open both valves
+    }
+
+    //                     MANUAL CANCEL
+    if (manualCleaningActive && commands.sumpCleaning.manualCleanCancel) {
+
+        Serial.println("[SUMP][MANUAL] Manual cleaning canceled");
+
+        manualCleaningActive = false;
+        actuators.sumpCleaning = false;
+        commands.sumpCleaning.inProgress = false;
+        control_sump_cleaning(false, false);  // close both valves
+        return;
+    }
+
+    //      MANUAL CLEANING AUTO STOP AFTER DURATION
+    if (manualCleaningActive &&
+        nowMillis - manualCleaningStart >= SUMP_CLEAN_DURATION_MS)
+    {
+        Serial.println("[SUMP][MANUAL] Manual cycle complete — stopping");
+
+        manualCleaningActive = false;
+        actuators.sumpCleaning = false;
+        commands.sumpCleaning.inProgress = false;
+        control_sump_cleaning(false, false);
+        return;
+    }
+
+    // If manual is in progress → AUTO MUST NOT RUN
+    if (manualCleaningActive) return;
+
+    //                     AUTO MODE BELOW
+    if (!actuators.sumpCleaningAuto) return;
+
+    // --- Turbidity tracking ---
+    if (turbidityNTU >= TURBIDITY_CLEAN_THRESHOLD) {
+        if (highSince == 0) highSince = nowMillis;
+
+        if (!intentPrinted && !cleaningActive) {
+            Serial.printf("[SUMP] High NTU detected (%.2f). Cleaning pending…\n",
+                          turbidityNTU);
+            intentPrinted = true;
+        }
+    } else {
+        highSince = 0;
+        intentPrinted = false;
+    }
+
+    // --- Auto start ---
+    if (!cleaningActive) {
+
+        Serial.printf("[SUMP] AUTO START — NTU=%.2f\n", turbidityNTU);
+
+        cleaningActive = true;
+        cleaningStart = nowMillis;
+        actuators.sumpCleaning = true;
+        commands.sumpCleaning.inProgress = true;
+
+        control_sump_cleaning(true, true);
+    }
+
+    // --- End auto cleaning ---
+    if (cleaningActive &&
+        nowMillis - cleaningStart >= SUMP_CLEAN_DURATION_MS)
+    {
+        Serial.println("[SUMP] AUTO DONE — closing valves");
+
+        cleaningActive = false;
+        actuators.sumpCleaning = false;
+        commands.sumpCleaning.inProgress = false;
+
+        control_sump_cleaning(false, false);
     }
 }

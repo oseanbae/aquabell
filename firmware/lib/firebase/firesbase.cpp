@@ -525,8 +525,27 @@ bool fetchControlCommands() {
         }
     }
 
+    // === Manual Sump Cleaning ===
+    if (!doc["sumpCleaning"].isNull()) {
+        JsonObject scObj = doc["sumpCleaning"].as<JsonObject>();
+        if (!scObj.isNull()) {
+            if (!scObj["manualCleanRequest"].isNull()) {
+                currentCommands.sumpCleaning.manualCleanRequest = scObj["manualCleanRequest"].as<bool>();
+            }
+            if (!scObj["manualCleanCancel"].isNull()) {
+                currentCommands.sumpCleaning.manualCleanCancel = scObj["manualCleanCancel"].as<bool>();
+            }
+            if (currentCommands.sumpCleaning.manualCleanRequest || currentCommands.sumpCleaning.manualCleanCancel) {
+                anyManualControl = true;
+                Serial.printf("[Control] Sump cleaning request=%s cancel=%s\n",
+                              currentCommands.sumpCleaning.manualCleanRequest ? "true" : "false",
+                              currentCommands.sumpCleaning.manualCleanCancel ? "true" : "false");
+            }
+        }
+    }
+
     if (anyManualControl) {
-        Serial.println("[Control] Applied manual relay states including water change.");
+        Serial.println("[Control] Applied manual relay states including water change and sump cleaning.");
         return true; // manual control applied
     }
 
@@ -565,10 +584,18 @@ void syncRelayState(const RealTimeData &data, const Commands &commands) {
     bool phActive = data.relayStates.phRaising || data.relayStates.phLowering;
     if (commands.phDosing.value != phActive) doc["phDosing/value"] = phActive;
 
-    // Manual water change sync only clears request/cancel if handled
+    // Sync inProgress for waterChange and sumpCleaning
+    doc["waterChange/inProgress"] = commands.waterChange.inProgress;
+    doc["sumpCleaning/inProgress"] = commands.sumpCleaning.inProgress;
+
+    // Clear manual request/cancel flags after handling
     if (commands.waterChange.manualChangeRequest || commands.waterChange.manualChangeCancel) {
         doc["waterChange/manualChangeRequest"] = false;
         doc["waterChange/manualChangeCancel"] = false;
+    }
+    if (commands.sumpCleaning.manualCleanRequest || commands.sumpCleaning.manualCleanCancel) {
+        doc["sumpCleaning/manualCleanRequest"] = false;
+        doc["sumpCleaning/manualCleanCancel"] = false;
     }
 
     if (doc.size() == 0) return;  // Nothing to sync
@@ -591,10 +618,12 @@ void syncRelayState(const RealTimeData &data, const Commands &commands) {
             extern Commands currentCommands;
             currentCommands.phDosing.value = phActive;
         }
-        // Clear manual water change flags after successful sync
+        // Clear manual flags after successful sync
         extern Commands currentCommands;
         currentCommands.waterChange.manualChangeRequest = false;
         currentCommands.waterChange.manualChangeCancel = false;
+        currentCommands.sumpCleaning.manualCleanRequest = false;
+        currentCommands.sumpCleaning.manualCleanCancel = false;
     } else {
         Serial.printf("[RTDB] Relay sync failed (%d)\n", httpResponseCode);
         initRetryState(url, payload, true);
@@ -745,7 +774,7 @@ void processPatchEvent(const String& dataPath, JsonDocument& patchData, Commands
             if (currentCommands.waterChange.manualChangeRequest != enabled) {
                 currentCommands.waterChange.manualChangeRequest = enabled;
                 hasChanges = true;
-                Serial.printf("[RTDB Stream] Water Change enabled: %s\n", enabled ? "true" : "false");
+                Serial.printf("[RTDB Stream] Water Change request: %s\n", enabled ? "true" : "false");
             }
         }
         if (!patchData["manualChangeCancel"].isNull()) {
@@ -753,7 +782,25 @@ void processPatchEvent(const String& dataPath, JsonDocument& patchData, Commands
             if (currentCommands.waterChange.manualChangeCancel != waterChangeCancel) {
                 currentCommands.waterChange.manualChangeCancel = waterChangeCancel;
                 hasChanges = true;
-                Serial.printf("[RTDB Stream] pH dosing value: %s\n", waterChangeCancel ? "true" : "false");
+                Serial.printf("[RTDB Stream] Water Change cancel: %s\n", waterChangeCancel ? "true" : "false");
+            }
+        }
+    }
+    else if (dataPath == "/sumpCleaning") {
+        if (!patchData["manualCleanRequest"].isNull()) {
+            bool enabled = patchData["manualCleanRequest"].as<bool>();
+            if (currentCommands.sumpCleaning.manualCleanRequest != enabled) {
+                currentCommands.sumpCleaning.manualCleanRequest = enabled;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Sump Cleaning request: %s\n", enabled ? "true" : "false");
+            }
+        }
+        if (!patchData["manualCleanCancel"].isNull()) {
+            bool sumpCleaningCancel = patchData["manualCleanCancel"].as<bool>();
+            if (currentCommands.sumpCleaning.manualCleanCancel != sumpCleaningCancel) {
+                currentCommands.sumpCleaning.manualCleanCancel = sumpCleaningCancel;
+                hasChanges = true;
+                Serial.printf("[RTDB Stream] Sump Cleaning cancel: %s\n", sumpCleaningCancel ? "true" : "false");
             }
         }
     }
@@ -844,11 +891,17 @@ void onRTDBStream(AsyncResult &result) {
         // === MANUAL WATER CHANGE ===
         if (currentCommands.waterChange.manualChangeRequest) {
             Serial.println("[RTDB Stream] Manual water change REQUEST detected");
-            // You can trigger drain pump here if desired in your rule engine
         }
         if (currentCommands.waterChange.manualChangeCancel) {
             Serial.println("[RTDB Stream] Manual water change CANCEL detected");
-            // You can cancel drain pump here if desired in your rule engine
+        }
+
+        // === MANUAL SUMP CLEANING ===
+        if (currentCommands.sumpCleaning.manualCleanRequest) {
+            Serial.println("[RTDB Stream] Manual sump cleaning REQUEST detected");
+        }
+        if (currentCommands.sumpCleaning.manualCleanCancel) {
+            Serial.println("[RTDB Stream] Manual sump cleaning CANCEL detected");
         }
     };
 
@@ -917,10 +970,18 @@ void onRTDBStream(AsyncResult &result) {
         if (changedPath.startsWith("/waterChange")) {
             JsonDocument obj;
             obj.set(changedData);
-            if (!obj["manualChangeRequest"].isNull()) currentCommands.waterChange.manualChangeRequest = obj["manualChangeRequest"].as<bool>();
-            if (!obj["manualChangeCancel"].isNull()) currentCommands.waterChange.manualChangeCancel = obj["manualChangeCancel"].as<bool>();
+            processPatchEvent("/waterChange", obj, currentCommands, hasChanges);
             if (currentCommands.waterChange.manualChangeRequest) Serial.println("[RTDB Stream] Manual water change REQUEST detected via stream");
             if (currentCommands.waterChange.manualChangeCancel) Serial.println("[RTDB Stream] Manual water change CANCEL detected via stream");
+        }
+
+        // === SUMP CLEANING PATCH HANDLING ===
+        if (changedPath.startsWith("/sumpCleaning")) {
+            JsonDocument obj;
+            obj.set(changedData);
+            processPatchEvent("/sumpCleaning", obj, currentCommands, hasChanges);
+            if (currentCommands.sumpCleaning.manualCleanRequest) Serial.println("[RTDB Stream] Manual sump cleaning REQUEST detected via stream");
+            if (currentCommands.sumpCleaning.manualCleanCancel) Serial.println("[RTDB Stream] Manual sump cleaning CANCEL detected via stream");
         }
 
         applyManualIfNeeded();
@@ -937,10 +998,17 @@ void onRTDBStream(AsyncResult &result) {
         // === WATER CHANGE SNAPSHOT HANDLING ===
         if (!doc["waterChange"].isNull()) {
             JsonDocument obj; obj.set(doc["waterChange"]);
-            if (!obj["manualChangeRequest"].isNull()) currentCommands.waterChange.manualChangeRequest = obj["manualChangeRequest"].as<bool>();
-            if (!obj["manualChangeCancel"].isNull()) currentCommands.waterChange.manualChangeCancel = obj["manualChangeCancel"].as<bool>();
+            processPatchEvent("/waterChange", obj, currentCommands, hasChanges);
             if (currentCommands.waterChange.manualChangeRequest) Serial.println("[RTDB Stream] Manual water change REQUEST detected via snapshot");
             if (currentCommands.waterChange.manualChangeCancel) Serial.println("[RTDB Stream] Manual water change CANCEL detected via snapshot");
+        }
+
+        // === SUMP CLEANING SNAPSHOT HANDLING ===
+        if (!doc["sumpCleaning"].isNull()) {
+            JsonDocument obj; obj.set(doc["sumpCleaning"]);
+            processPatchEvent("/sumpCleaning", obj, currentCommands, hasChanges);
+            if (currentCommands.sumpCleaning.manualCleanRequest) Serial.println("[RTDB Stream] Manual sump cleaning REQUEST detected via snapshot");
+            if (currentCommands.sumpCleaning.manualCleanCancel) Serial.println("[RTDB Stream] Manual sump cleaning CANCEL detected via snapshot");
         }
 
         applyManualIfNeeded();

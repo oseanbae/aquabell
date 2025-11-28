@@ -1,0 +1,55 @@
+{
+  "commands": {
+    "aquabell_esp32": {
+      "cooler": {
+        "isAuto": true,
+        "value": false
+      },
+      "fan": {
+        "isAuto": false,
+        "value": true
+      },
+      "heater": {
+        "isAuto": true,
+        "value": false
+      },
+      "light": {
+        "isAuto": false,
+        "value": false
+      },
+      "phDosing": {
+        "phDosingEnabled": false,
+        "value": false
+      },
+      "pump": {
+        "isAuto": false,
+        "value": true
+      },
+      "sumpCleaning": {
+        "inProgress": false,
+        "manualCleanCancel": false,
+        "manualCleanRequest": false
+      },
+      "valve": {
+        "isAuto": true,
+        "value": false
+      },
+      "waterChange": {
+        "inProgress": false,
+        "manualChangeCancel": false,
+        "manualChangeRequest": false
+      }
+    }
+  },
+  "live_data": {
+    "aquabell_esp32": {
+      "airHumidity": 61.65454,
+      "airTemp": 30,
+      "dissolvedOxygen": 5.46,
+      "pH": 7.211999,
+      "timestamp": 1763793731,
+      "turbidityNTU": 409.9698,
+      "waterTemp": 28.125
+    }
+  }
+}
