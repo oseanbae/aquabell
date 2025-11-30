@@ -770,9 +770,7 @@ void checkWaterChangeLogic(ActuatorState& actuators, Commands& commands, float d
     }
 }
 
-void checkSumpCleaningLogic(ActuatorState &actuators, Commands& commands,
-                            float turbidityNTU, unsigned long nowMillis)
-{
+void checkSumpCleaningLogic(ActuatorState &actuators, Commands& commands,float turbidityNTU, unsigned long nowMillis) {
     if (isnan(turbidityNTU)) return;
 
     static bool manualCleaningActive = false;

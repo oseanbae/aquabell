@@ -38,26 +38,31 @@ void lcd_init() {
 
 // Write the dynamic values in-place (no lcd.clear())
 void lcd_display(const RealTimeData& data) {
-    String airVal = "Air:" + String(data.airTemp) + "C";
-    String humVal = "Hum:" + String(data.airHumidity) + "%";
+
+    // --- AIR ---
+    String airVal = "Air:" + String(data.airTemp, 1) + "C";   // 1 decimal
+    String humVal = "Hum:" + String(data.airHumidity, 0) + "%"; // whole number
     lcd.setCursor(0, 0);
     lcd.print(fixedWidth(airVal, 10));
     lcd.setCursor(10, 0);
     lcd.print(fixedWidth(humVal, 10));
 
-    String waterVal = "Water: " + String(data.waterTemp) + "C ";
-    String pHVal = "pH: " + String(data.pH);
- 
+    // --- WATER + pH ---
+    String waterVal = "Water: " + String(data.waterTemp, 1) + "C"; // 1 decimal
+    String pHVal    = "pH: "    + String(data.pH, 1);              // 1 decimal
     lcd.setCursor(0, 1);
     lcd.print(fixedWidth(waterVal, 12));
     lcd.setCursor(12, 1);
     lcd.print(fixedWidth(pHVal, 8));
 
-    String doVal = "DO: " + String(data.dissolvedOxygen) + "mg/L";
+    // --- DO ---
+    String doVal = "DO: " + String(data.dissolvedOxygen, 1) + "mg/L"; // 1 decimal
     lcd.setCursor(0, 2);
     lcd.print(fixedWidth(doVal, 20));
 
+    // --- TURBIDITY ---
     String turbVal = "Turb: " + String(data.turbidityNTU) + "NTU";
     lcd.setCursor(0, 3);
     lcd.print(fixedWidth(turbVal, 20));
 }
+
